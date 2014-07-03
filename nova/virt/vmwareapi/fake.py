@@ -43,7 +43,7 @@ LOG = logging.getLogger(__name__)
 
 def log_db_contents(msg=None):
     """Log DB Contents."""
-    LOG.debug(_("%(text)s: _db_content => %(content)s"),
+    LOG.debug("%(text)s: _db_content => %(content)s",
               {'text': msg or "", 'content': pprint.pformat(_db_content)})
 
 
@@ -265,7 +265,7 @@ class DataObject(object):
 
 
 class HostInternetScsiHba(DataObject):
-    """iSCSI Host Bus Adapter"""
+    """iSCSI Host Bus Adapter."""
 
     def __init__(self):
         super(HostInternetScsiHba, self).__init__()
@@ -920,7 +920,7 @@ def _remove_file(file_path):
     # Check if the remove is for a single file object or for a folder
     if file_path.find(".vmdk") != -1:
         if file_path not in _db_content.get("files"):
-            raise exception.FileNotFound(file_path=file_path)
+            raise error_util.FileNotFoundException(file_path)
         _db_content.get("files").remove(file_path)
     else:
         # Removes the files in the folder and the folder too from the db
@@ -1064,7 +1064,7 @@ class FakeVim(object):
         """Checks if the session is active."""
         if (self._session is None or self._session not in
                  _db_content['session']):
-            LOG.debug(_("Session is faulty"))
+            LOG.debug("Session is faulty")
             raise error_util.VimFaultException(
                                [error_util.NOT_AUTHENTICATED],
                                _("Session Invalid"))
@@ -1138,15 +1138,6 @@ class FakeVim(object):
 
     def _delete_snapshot(self, method, *args, **kwargs):
         """Deletes a VM snapshot. Here we do nothing for faking sake."""
-        task_mdo = create_task(method, "success")
-        return task_mdo.obj
-
-    def _delete_disk(self, method, *args, **kwargs):
-        """Deletes .vmdk and -flat.vmdk files corresponding to the VM."""
-        vmdk_file_path = kwargs.get("name")
-        flat_vmdk_file_path = vmdk_file_path.replace(".vmdk", "-flat.vmdk")
-        _remove_file(vmdk_file_path)
-        _remove_file(flat_vmdk_file_path)
         task_mdo = create_task(method, "success")
         return task_mdo.obj
 

@@ -77,7 +77,12 @@ class EvacuateController(wsgi.Controller):
             msg = _("Compute host %s not found.") % host
             raise exc.HTTPNotFound(explanation=msg)
 
-        instance = common.get_instance(self.compute_api, context, id)
+        instance = common.get_instance(self.compute_api, context, id,
+                                       want_objects=True)
+        if instance.host == host:
+            msg = _("The target host can't be the same one.")
+            raise exc.HTTPBadRequest(explanation=msg)
+
         try:
             self.compute_api.evacuate(context, instance, host,
                                       on_shared_storage, password)

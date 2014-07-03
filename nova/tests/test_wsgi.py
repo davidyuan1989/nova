@@ -22,6 +22,7 @@ import testtools
 
 import eventlet
 import eventlet.wsgi
+import mock
 import requests
 
 import nova.exception
@@ -126,19 +127,30 @@ class TestWSGIServer(test.NoDBTestCase):
         server.stop()
         server.wait()
 
+    def test_server_pool_waitall(self):
+        # test pools waitall method gets called while stopping server
+        server = nova.wsgi.Server("test_server", None,
+            host="127.0.0.1", port=4444)
+        server.start()
+        with mock.patch.object(server._pool,
+                              'waitall') as mock_waitall:
+            server.stop()
+            server.wait()
+            mock_waitall.assert_called_once_with()
+
     def test_uri_length_limit(self):
         server = nova.wsgi.Server("test_uri_length_limit", None,
             host="127.0.0.1", max_url_len=16384)
         server.start()
 
         uri = "http://127.0.0.1:%d/%s" % (server.port, 10000 * 'x')
-        resp = requests.get(uri)
+        resp = requests.get(uri, proxies={"http": ""})
         eventlet.sleep(0)
         self.assertNotEqual(resp.status_code,
                             requests.codes.REQUEST_URI_TOO_LARGE)
 
         uri = "http://127.0.0.1:%d/%s" % (server.port, 20000 * 'x')
-        resp = requests.get(uri)
+        resp = requests.get(uri, proxies={"http": ""})
         eventlet.sleep(0)
         self.assertEqual(resp.status_code,
                          requests.codes.REQUEST_URI_TOO_LARGE)

@@ -42,8 +42,8 @@ from nova import context
 from nova import db
 from nova import exception
 from nova.network import model as network_model
+from nova import objects
 from nova.objects import flavor as flavor_obj
-from nova.objects import instance as instance_obj
 from nova.objects import pci_device as pci_device_obj
 from nova.objects import service as service_obj
 from nova.openstack.common import fileutils
@@ -142,6 +142,14 @@ _fake_NodeDevXml = \
           </capability>
         </capability>
     </device>"""}
+
+
+def mocked_bdm(id, bdm_info):
+    bdm_mock = mock.MagicMock()
+    bdm_mock.__getitem__ = lambda s, k: bdm_info[k]
+    bdm_mock.get = lambda *k, **kw: bdm_info.get(*k, **kw)
+    bdm_mock.id = id
+    return bdm_mock
 
 
 def _concurrency(signal, wait, done, target, is_block_dev=False):
@@ -401,7 +409,7 @@ class LibvirtConnTestCase(test.TestCase):
         # returned by libvirt becomes the serial whose value is checked for in
         # test_xml_and_uri_* below.
         self.useFixture(fixtures.MonkeyPatch(
-            'nova.virt.libvirt.driver.LibvirtDriver.get_host_uuid',
+            'nova.virt.libvirt.driver.LibvirtDriver._get_host_uuid',
             lambda _: 'cef19ce0-0ca2-11df-855d-b19fbce37686'))
         self.useFixture(fixtures.MonkeyPatch(
             'nova.virt.libvirt.imagebackend.libvirt_utils',
@@ -574,7 +582,7 @@ class LibvirtConnTestCase(test.TestCase):
         default_params = self.test_instance
         default_params['pci_devices'] = pci_device_obj.PciDeviceList()
         default_params.update(params)
-        instance = instance_obj.Instance(context, **params)
+        instance = objects.Instance(context, **params)
         flavor = flavors.get_default_flavor()
         instance.system_metadata = flavors.save_flavor_info({}, flavor)
         instance.instance_type_id = flavor['id']
@@ -638,8 +646,8 @@ class LibvirtConnTestCase(test.TestCase):
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         self.mox.StubOutWithMock(libvirt_driver.LibvirtDriver,
-                                 'has_min_version')
-        libvirt_driver.LibvirtDriver.has_min_version = lambda x, y: False
+                                 '_has_min_version')
+        libvirt_driver.LibvirtDriver._has_min_version = lambda x, y: False
 
         self.assertRaises(exception.PciDeviceDetachFailed,
                           conn._detach_pci_devices, None, pci_devices)
@@ -648,10 +656,19 @@ class LibvirtConnTestCase(test.TestCase):
 
         fake_domXML1 =\
             """<domain> <devices>
-              <hostdev mode="subsystem" type="pci" managed="yes">
-                <source>
-            <address function="0x1" slot="0x10" domain="0x0000" bus="0x04"/>
-                </source>
+            <disk type='file' device='disk'>
+            <driver name='qemu' type='qcow2' cache='none'/>
+            <source file='xxx'/>
+            <target dev='vda' bus='virtio'/>
+            <alias name='virtio-disk0'/>
+            <address type='pci' domain='0x0000' bus='0x00'
+            slot='0x04' function='0x0'/>
+            </disk>
+            <hostdev mode="subsystem" type="pci" managed="yes">
+            <source>
+            <address function="0x1" slot="0x10" domain="0x0000"
+             bus="0x04"/>
+            </source>
             </hostdev></devices></domain>"""
 
         pci_devices = [dict(hypervisor_name='xxx',
@@ -661,17 +678,17 @@ class LibvirtConnTestCase(test.TestCase):
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         self.mox.StubOutWithMock(libvirt_driver.LibvirtDriver,
-                                 'has_min_version')
-        libvirt_driver.LibvirtDriver.has_min_version = lambda x, y: True
+                                 '_has_min_version')
+        libvirt_driver.LibvirtDriver._has_min_version = lambda x, y: True
 
         self.mox.StubOutWithMock(libvirt_driver.LibvirtDriver,
-                                 'get_guest_pci_device')
+                                 '_get_guest_pci_device')
 
         class FakeDev():
             def to_xml(self):
                 pass
 
-        libvirt_driver.LibvirtDriver.get_guest_pci_device =\
+        libvirt_driver.LibvirtDriver._get_guest_pci_device =\
             lambda x, y: FakeDev()
 
         class FakeDomain():
@@ -705,17 +722,17 @@ class LibvirtConnTestCase(test.TestCase):
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         self.mox.StubOutWithMock(libvirt_driver.LibvirtDriver,
-                                 'has_min_version')
-        libvirt_driver.LibvirtDriver.has_min_version = lambda x, y: True
+                                 '_has_min_version')
+        libvirt_driver.LibvirtDriver._has_min_version = lambda x, y: True
 
         self.mox.StubOutWithMock(libvirt_driver.LibvirtDriver,
-                                 'get_guest_pci_device')
+                                 '_get_guest_pci_device')
 
         class FakeDev():
             def to_xml(self):
                 pass
 
-        libvirt_driver.LibvirtDriver.get_guest_pci_device =\
+        libvirt_driver.LibvirtDriver._get_guest_pci_device =\
             lambda x, y: FakeDev()
 
         class FakeDomain():
@@ -769,7 +786,7 @@ class LibvirtConnTestCase(test.TestCase):
         @mock.patch.object(libvirt, 'registerErrorHandler',
                            side_effect=fake_registerErrorHandler)
         @mock.patch.object(libvirt_driver.LibvirtDriver,
-                           'get_host_capabilities',
+                           '_get_host_capabilities',
                             side_effect=fake_get_host_capabilities)
         def test_init_host(get_host_capabilities, register_error_handler):
             conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
@@ -796,8 +813,8 @@ class LibvirtConnTestCase(test.TestCase):
         bdm = [{'connection_info': {'data': data}}]
         bdi = {'block_device_mapping': bdm}
 
-        # Tests that the parameters to the to_xml method are sanitized for
-        # passwords when logged.
+        # Tests that the parameters to the _get_guest_xml method
+        # are sanitized for passwords when logged.
         def fake_debug(*args, **kwargs):
             if 'auth_password' in args[0]:
                 self.assertNotIn('scrubme', args[0])
@@ -807,12 +824,13 @@ class LibvirtConnTestCase(test.TestCase):
         with contextlib.nested(
             mock.patch.object(libvirt_driver.LOG, 'debug',
                               side_effect=fake_debug),
-            mock.patch.object(conn, 'get_guest_config', return_value=conf)
+            mock.patch.object(conn, '_get_guest_config', return_value=conf)
         ) as (
             debug_mock, conf_mock
         ):
-            conn.to_xml(self.context, self.test_instance, network_info={},
-                        disk_info={}, image_meta={}, block_device_info=bdi)
+            conn._get_guest_xml(self.context, self.test_instance,
+                                network_info={}, disk_info={},
+                                image_meta={}, block_device_info=bdi)
             # we don't care what the log message is, we just want to make sure
             # our stub method is called which asserts the password is scrubbed
             self.assertTrue(debug_mock.called)
@@ -887,7 +905,7 @@ class LibvirtConnTestCase(test.TestCase):
         # Test old version of libvirt, it shouldn't see the `aes' feature
         with mock.patch('nova.virt.libvirt.driver.libvirt') as mock_libvirt:
             del mock_libvirt.VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES
-            caps = conn.get_host_capabilities()
+            caps = conn._get_host_capabilities()
             self.assertNotIn('aes', [x.name for x in caps.host.cpu.features])
 
         # Test new verion of libvirt, should find the `aes' feature
@@ -895,7 +913,7 @@ class LibvirtConnTestCase(test.TestCase):
             mock_libvirt['VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES'] = 1
             # Cleanup the capabilities cache firstly
             conn._caps = None
-            caps = conn.get_host_capabilities()
+            caps = conn._get_host_capabilities()
             self.assertIn('aes', [x.name for x in caps.host.cpu.features])
 
     def test_cpu_features_are_not_duplicated(self):
@@ -904,7 +922,7 @@ class LibvirtConnTestCase(test.TestCase):
         # Test old version of libvirt. Should return single 'hypervisor'
         with mock.patch('nova.virt.libvirt.driver.libvirt') as mock_libvirt:
             del mock_libvirt.VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES
-            caps = conn.get_host_capabilities()
+            caps = conn._get_host_capabilities()
             cnt = [x.name for x in caps.host.cpu.features].count('hypervisor')
             self.assertEqual(1, cnt)
 
@@ -913,7 +931,7 @@ class LibvirtConnTestCase(test.TestCase):
             mock_libvirt['VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES'] = 1
             # Cleanup the capabilities cache firstly
             conn._caps = None
-            caps = conn.get_host_capabilities()
+            caps = conn._get_host_capabilities()
             cnt = [x.name for x in caps.host.cpu.features].count('hypervisor')
             self.assertEqual(1, cnt)
 
@@ -936,7 +954,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         with mock.patch.object(conn._conn, 'baselineCPU',
                                side_effect=not_supported_exc):
-            caps = conn.get_host_capabilities()
+            caps = conn._get_host_capabilities()
             self.assertEqual(vconfig.LibvirtConfigCaps, type(caps))
             self.assertNotIn('aes', [x.name for x in caps.host.cpu.features])
 
@@ -951,14 +969,15 @@ class LibvirtConnTestCase(test.TestCase):
 
         with mock.patch.object(conn._conn, 'baselineCPU',
                                side_effect=other_exc):
-            self.assertRaises(libvirt.libvirtError, conn.get_host_capabilities)
+            self.assertRaises(libvirt.libvirtError,
+                              conn._get_host_capabilities)
 
     def test_lxc_get_host_capabilities_failed(self):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
 
         with mock.patch.object(conn._conn, 'baselineCPU', return_value=-1):
             setattr(libvirt, 'VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES', 1)
-            caps = conn.get_host_capabilities()
+            caps = conn._get_host_capabilities()
             delattr(libvirt, 'VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES')
             self.assertEqual(vconfig.LibvirtConfigCaps, type(caps))
             self.assertNotIn('aes', [x.name for x in caps.host.cpu.features])
@@ -969,9 +988,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref,
-                                    _fake_network_info(self.stubs, 1),
-                                    None, disk_info)
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     {}, disk_info)
         self.assertEqual(cfg.uuid, instance_ref["uuid"])
         self.assertEqual(cfg.acpi, True)
         self.assertEqual(cfg.apic, True)
@@ -1018,9 +1037,9 @@ class LibvirtConnTestCase(test.TestCase):
             with mock.patch.object(libvirt_driver.libvirt_utils,
                                    'get_arch',
                                    return_value=arch):
-                cfg = conn.get_guest_config(instance_ref, [],
-                                            image_meta,
-                                            disk_info)
+                cfg = conn._get_guest_config(instance_ref, [],
+                                             image_meta,
+                                             disk_info)
                 self.assertIsInstance(cfg.clock,
                                       vconfig.LibvirtConfigGuestClock)
                 self.assertEqual(cfg.clock.offset, "utc")
@@ -1050,9 +1069,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref,
-                                    _fake_network_info(self.stubs, 1),
-                                    None, disk_info)
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     {}, disk_info)
 
         self.assertIsInstance(cfg.clock,
                               vconfig.LibvirtConfigGuestClock)
@@ -1064,9 +1083,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref,
-                                    _fake_network_info(self.stubs, 2),
-                                    None, disk_info)
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 2),
+                                     {}, disk_info)
         self.assertEqual(cfg.acpi, True)
         self.assertEqual(cfg.memory, 2 * units.Mi)
         self.assertEqual(cfg.vcpus, 1)
@@ -1111,8 +1130,8 @@ class LibvirtConnTestCase(test.TestCase):
         # This will exercise the failed code path still,
         # and won't require fakes and stubs of the iscsi discovery
         block_device_info = {}
-        conn.get_guest_config(instance_ref, [], None, disk_info,
-                              None, block_device_info)
+        conn._get_guest_config(instance_ref, [], {}, disk_info,
+                               None, block_device_info)
         instance_ref = db.instance_get(self.context, instance_ref['id'])
         self.assertEqual(instance_ref['root_device_name'], '/dev/vda')
 
@@ -1125,8 +1144,8 @@ class LibvirtConnTestCase(test.TestCase):
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref,
                                             block_device_info)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info,
-                                    None, block_device_info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info,
+                                     None, block_device_info)
         self.assertEqual(cfg.acpi, False)
         self.assertEqual(cfg.memory, 2 * units.Mi)
         self.assertEqual(cfg.vcpus, 1)
@@ -1147,19 +1166,24 @@ class LibvirtConnTestCase(test.TestCase):
         instance_ref = db.instance_create(self.context, self.test_instance)
         conn_info = {'driver_volume_type': 'fake'}
         info = {'block_device_mapping': [
-                  {'connection_info': conn_info, 'mount_device': '/dev/vdc'},
-                  {'connection_info': conn_info, 'mount_device': '/dev/vdd'}]}
+                mocked_bdm(1, {'connection_info': conn_info,
+                               'mount_device': '/dev/vdc'}),
+                mocked_bdm(2, {'connection_info': conn_info,
+                               'mount_device': '/dev/vdd'}),
+                ]}
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref, info)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info,
-                                    None, info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info,
+                                     None, info)
         self.assertIsInstance(cfg.devices[2],
                               vconfig.LibvirtConfigGuestDisk)
         self.assertEqual(cfg.devices[2].target_dev, 'vdc')
         self.assertIsInstance(cfg.devices[3],
                               vconfig.LibvirtConfigGuestDisk)
         self.assertEqual(cfg.devices[3].target_dev, 'vdd')
+        self.assertTrue(info['block_device_mapping'][0].save.called)
+        self.assertTrue(info['block_device_mapping'][1].save.called)
 
     def test_get_guest_config_with_configdrive(self):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
@@ -1170,7 +1194,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
 
         self.assertIsInstance(cfg.devices[2],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1184,7 +1208,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref, [], image_meta)
-        cfg = conn.get_guest_config(instance_ref, [], image_meta, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], image_meta, disk_info)
         self.assertIsInstance(cfg.devices[0],
                          vconfig.LibvirtConfigGuestDisk)
         self.assertIsInstance(cfg.devices[1],
@@ -1200,15 +1224,18 @@ class LibvirtConnTestCase(test.TestCase):
         instance_ref = db.instance_create(self.context, self.test_instance)
         conn_info = {'driver_volume_type': 'fake'}
         bd_info = {'block_device_mapping': [
-                  {'connection_info': conn_info, 'mount_device': '/dev/sdc',
-                   'disk_bus': 'scsi'},
-                  {'connection_info': conn_info, 'mount_device': '/dev/sdd',
-                   'disk_bus': 'scsi'}]}
+                mocked_bdm(1, {'connection_info': conn_info,
+                               'mount_device': '/dev/sdc',
+                               'disk_bus': 'scsi'}),
+                mocked_bdm(2, {'connection_info': conn_info,
+                               'mount_device': '/dev/sdd',
+                               'disk_bus': 'scsi'}),
+                ]}
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref, bd_info, image_meta)
-        cfg = conn.get_guest_config(instance_ref, [], image_meta, disk_info,
-                                    [], bd_info)
+        cfg = conn._get_guest_config(instance_ref, [], image_meta, disk_info,
+                                     [], bd_info)
         self.assertIsInstance(cfg.devices[2],
                          vconfig.LibvirtConfigGuestDisk)
         self.assertEqual(cfg.devices[2].target_dev, 'sdc')
@@ -1233,7 +1260,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
         self.assertEqual(len(cfg.devices), 6)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1262,7 +1289,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
         self.assertEqual(len(cfg.devices), 7)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1296,7 +1323,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
         self.assertEqual(len(cfg.devices), 7)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1330,7 +1357,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
         self.assertEqual(len(cfg.devices), 7)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1364,7 +1391,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
         self.assertEqual(len(cfg.devices), 5)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1394,7 +1421,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        cfg = conn.get_guest_config(instance_ref, [], None, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
         self.assertEqual(len(cfg.devices), 9)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1430,7 +1457,7 @@ class LibvirtConnTestCase(test.TestCase):
                                             instance_ref)
         image_meta = {"properties": {"hw_watchdog_action": "something"}}
         self.assertRaises(exception.InvalidWatchdogAction,
-                          conn.get_guest_config,
+                          conn._get_guest_config,
                           instance_ref,
                           [],
                           image_meta,
@@ -1445,7 +1472,7 @@ class LibvirtConnTestCase(test.TestCase):
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
         image_meta = {"properties": {"hw_watchdog_action": "none"}}
-        cfg = conn.get_guest_config(instance_ref, [], image_meta, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], image_meta, disk_info)
         self.assertEqual(len(cfg.devices), 8)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1471,55 +1498,49 @@ class LibvirtConnTestCase(test.TestCase):
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
 
-        flavor = db.flavor_get(self.context,
-                               self.test_instance['instance_type_id'])
-        db.flavor_extra_specs_update_or_create(
-                self.context,
-                flavor['flavorid'],
-                {'hw_watchdog_action': 'none'})
+        fake_flavour = flavor_obj.Flavor.get_by_id(
+                                 self.context,
+                                 self.test_instance['instance_type_id'])
+        fake_flavour.extra_specs = {'hw_watchdog_action': 'none'}
 
         instance_ref = db.instance_create(self.context, self.test_instance)
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
 
-        cfg = conn.get_guest_config(instance_ref, [], {}, disk_info)
+        with mock.patch.object(flavor_obj.Flavor, 'get_by_id',
+                               return_value=fake_flavour):
+            cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
 
-        db.flavor_extra_specs_delete(self.context,
-                                     flavor['flavorid'],
-                                     'hw_watchdog_action')
+            self.assertEqual(8, len(cfg.devices))
+            self.assertIsInstance(cfg.devices[0],
+                                  vconfig.LibvirtConfigGuestDisk)
+            self.assertIsInstance(cfg.devices[1],
+                                  vconfig.LibvirtConfigGuestDisk)
+            self.assertIsInstance(cfg.devices[2],
+                                  vconfig.LibvirtConfigGuestSerial)
+            self.assertIsInstance(cfg.devices[3],
+                                  vconfig.LibvirtConfigGuestSerial)
+            self.assertIsInstance(cfg.devices[4],
+                                  vconfig.LibvirtConfigGuestInput)
+            self.assertIsInstance(cfg.devices[5],
+                                  vconfig.LibvirtConfigGuestGraphics)
+            self.assertIsInstance(cfg.devices[6],
+                                  vconfig.LibvirtConfigGuestVideo)
+            self.assertIsInstance(cfg.devices[7],
+                                  vconfig.LibvirtConfigGuestWatchdog)
 
-        self.assertEqual(8, len(cfg.devices))
-        self.assertIsInstance(cfg.devices[0],
-                              vconfig.LibvirtConfigGuestDisk)
-        self.assertIsInstance(cfg.devices[1],
-                              vconfig.LibvirtConfigGuestDisk)
-        self.assertIsInstance(cfg.devices[2],
-                              vconfig.LibvirtConfigGuestSerial)
-        self.assertIsInstance(cfg.devices[3],
-                              vconfig.LibvirtConfigGuestSerial)
-        self.assertIsInstance(cfg.devices[4],
-                              vconfig.LibvirtConfigGuestInput)
-        self.assertIsInstance(cfg.devices[5],
-                              vconfig.LibvirtConfigGuestGraphics)
-        self.assertIsInstance(cfg.devices[6],
-                              vconfig.LibvirtConfigGuestVideo)
-        self.assertIsInstance(cfg.devices[7],
-                              vconfig.LibvirtConfigGuestWatchdog)
-
-        self.assertEqual("none", cfg.devices[7].action)
+            self.assertEqual("none", cfg.devices[7].action)
 
     def test_get_guest_config_with_watchdog_action_meta_overrides_flavor(self):
         self.flags(virt_type='kvm', group='libvirt')
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
 
-        flavor = db.flavor_get(self.context,
-                               self.test_instance['instance_type_id'])
-        db.flavor_extra_specs_update_or_create(
-                self.context,
-                flavor['flavorid'],
-                {'hw_watchdog_action': 'none'})
+        fake_flavour = flavor_obj.Flavor.get_by_id(
+                                 self.context,
+                                 self.test_instance['instance_type_id'])
+        fake_flavour.extra_specs = {'hw_watchdog_action': 'none'}
 
         instance_ref = db.instance_create(self.context, self.test_instance)
 
@@ -1528,31 +1549,30 @@ class LibvirtConnTestCase(test.TestCase):
 
         image_meta = {"properties": {"hw_watchdog_action": "pause"}}
 
-        cfg = conn.get_guest_config(instance_ref, [], image_meta, disk_info)
+        with mock.patch.object(flavor_obj.Flavor, 'get_by_id',
+                               return_value=fake_flavour):
+            cfg = conn._get_guest_config(instance_ref, [],
+                                         image_meta, disk_info)
 
-        db.flavor_extra_specs_delete(self.context,
-                                     flavor['flavorid'],
-                                     'hw_watchdog_action')
+            self.assertEqual(8, len(cfg.devices))
+            self.assertIsInstance(cfg.devices[0],
+                                  vconfig.LibvirtConfigGuestDisk)
+            self.assertIsInstance(cfg.devices[1],
+                                  vconfig.LibvirtConfigGuestDisk)
+            self.assertIsInstance(cfg.devices[2],
+                                  vconfig.LibvirtConfigGuestSerial)
+            self.assertIsInstance(cfg.devices[3],
+                                  vconfig.LibvirtConfigGuestSerial)
+            self.assertIsInstance(cfg.devices[4],
+                                  vconfig.LibvirtConfigGuestInput)
+            self.assertIsInstance(cfg.devices[5],
+                                  vconfig.LibvirtConfigGuestGraphics)
+            self.assertIsInstance(cfg.devices[6],
+                                  vconfig.LibvirtConfigGuestVideo)
+            self.assertIsInstance(cfg.devices[7],
+                                  vconfig.LibvirtConfigGuestWatchdog)
 
-        self.assertEqual(8, len(cfg.devices))
-        self.assertIsInstance(cfg.devices[0],
-                              vconfig.LibvirtConfigGuestDisk)
-        self.assertIsInstance(cfg.devices[1],
-                              vconfig.LibvirtConfigGuestDisk)
-        self.assertIsInstance(cfg.devices[2],
-                              vconfig.LibvirtConfigGuestSerial)
-        self.assertIsInstance(cfg.devices[3],
-                              vconfig.LibvirtConfigGuestSerial)
-        self.assertIsInstance(cfg.devices[4],
-                              vconfig.LibvirtConfigGuestInput)
-        self.assertIsInstance(cfg.devices[5],
-                              vconfig.LibvirtConfigGuestGraphics)
-        self.assertIsInstance(cfg.devices[6],
-                              vconfig.LibvirtConfigGuestVideo)
-        self.assertIsInstance(cfg.devices[7],
-                              vconfig.LibvirtConfigGuestWatchdog)
-
-        self.assertEqual("pause", cfg.devices[7].action)
+            self.assertEqual("pause", cfg.devices[7].action)
 
     def test_unsupported_video_driver_through_image_meta(self):
         self.flags(virt_type='kvm', group='libvirt')
@@ -1564,7 +1584,7 @@ class LibvirtConnTestCase(test.TestCase):
                                             instance_ref)
         image_meta = {"properties": {"hw_video_model": "something"}}
         self.assertRaises(exception.InvalidVideoMode,
-                          conn.get_guest_config,
+                          conn._get_guest_config,
                           instance_ref,
                           [],
                           image_meta,
@@ -1579,7 +1599,7 @@ class LibvirtConnTestCase(test.TestCase):
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
         image_meta = {"properties": {"hw_video_model": "vmvga"}}
-        cfg = conn.get_guest_config(instance_ref, [], image_meta, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], image_meta, disk_info)
         self.assertEqual(len(cfg.devices), 7)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1608,7 +1628,7 @@ class LibvirtConnTestCase(test.TestCase):
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
         image_meta = {"properties": {"hw_qemu_guest_agent": "yes"}}
-        cfg = conn.get_guest_config(instance_ref, [], image_meta, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], image_meta, disk_info)
         self.assertEqual(len(cfg.devices), 8)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1650,7 +1670,7 @@ class LibvirtConnTestCase(test.TestCase):
                                      "hw_video_ram": "64"}}
         with mock.patch.object(flavor_obj.Flavor, 'get_by_id',
                                return_value=instance_type):
-            cfg = conn.get_guest_config(instance_ref, [],
+            cfg = conn._get_guest_config(instance_ref, [],
                                         image_meta, disk_info)
             self.assertEqual(len(cfg.devices), 7)
             self.assertIsInstance(cfg.devices[0],
@@ -1686,7 +1706,7 @@ class LibvirtConnTestCase(test.TestCase):
         image_meta = {"properties": {"hw_video_model": "qxl",
                                      "hw_video_ram": "64"}}
         self.assertRaises(exception.RequestedVRamTooHigh,
-                          conn.get_guest_config,
+                          conn._get_guest_config,
                           instance_ref,
                           [],
                           image_meta,
@@ -1710,7 +1730,7 @@ class LibvirtConnTestCase(test.TestCase):
         with mock.patch.object(flavor_obj.Flavor, 'get_by_id',
                                return_value=instance_type):
             self.assertRaises(exception.RequestedVRamTooHigh,
-                              conn.get_guest_config,
+                              conn._get_guest_config,
                               instance_ref,
                               [],
                               image_meta,
@@ -1725,7 +1745,7 @@ class LibvirtConnTestCase(test.TestCase):
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
         image_meta = {"properties": {"hw_qemu_guest_agent": "no"}}
-        cfg = conn.get_guest_config(instance_ref, [], image_meta, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [], image_meta, disk_info)
         self.assertEqual(len(cfg.devices), 7)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1763,7 +1783,7 @@ class LibvirtConnTestCase(test.TestCase):
         image_meta = {"properties": {"hw_rng_model": "virtio"}}
         with mock.patch.object(flavor_obj.Flavor, 'get_by_id',
                                return_value=fake_flavour):
-            cfg = conn.get_guest_config(instance_ref, [],
+            cfg = conn._get_guest_config(instance_ref, [],
                                         image_meta, disk_info)
             self.assertEqual(len(cfg.devices), 7)
             self.assertIsInstance(cfg.devices[0],
@@ -1797,8 +1817,8 @@ class LibvirtConnTestCase(test.TestCase):
                                             instance_ref)
 
         image_meta = {"properties": {"hw_rng_model": "virtio"}}
-        cfg = conn.get_guest_config(instance_ref, [],
-                                    image_meta, disk_info)
+        cfg = conn._get_guest_config(instance_ref, [],
+                                     image_meta, disk_info)
         self.assertEqual(len(cfg.devices), 6)
         self.assertIsInstance(cfg.devices[0],
                               vconfig.LibvirtConfigGuestDisk)
@@ -1833,8 +1853,8 @@ class LibvirtConnTestCase(test.TestCase):
         image_meta = {"properties": {"hw_rng_model": "virtio"}}
         with mock.patch.object(flavor_obj.Flavor, 'get_by_id',
                                return_value=fake_flavour):
-            cfg = conn.get_guest_config(instance_ref, [],
-                                        image_meta, disk_info)
+            cfg = conn._get_guest_config(instance_ref, [],
+                                         image_meta, disk_info)
             self.assertEqual(len(cfg.devices), 7)
             self.assertIsInstance(cfg.devices[0],
                                   vconfig.LibvirtConfigGuestDisk)
@@ -1877,8 +1897,8 @@ class LibvirtConnTestCase(test.TestCase):
                                                  return_value=fake_flavour),
                        mock.patch('nova.virt.libvirt.driver.os.path.exists',
                                                  return_value=True)):
-            cfg = conn.get_guest_config(instance_ref, [],
-                                        image_meta, disk_info)
+            cfg = conn._get_guest_config(instance_ref, [],
+                                         image_meta, disk_info)
             self.assertEqual(len(cfg.devices), 7)
             self.assertIsInstance(cfg.devices[0],
                              vconfig.LibvirtConfigGuestDisk)
@@ -1922,7 +1942,7 @@ class LibvirtConnTestCase(test.TestCase):
                        mock.patch('nova.virt.libvirt.driver.os.path.exists',
                                                  return_value=False)):
             self.assertRaises(exception.RngDeviceNotExist,
-                              conn.get_guest_config,
+                              conn._get_guest_config,
                               instance_ref,
                               [],
                               image_meta, disk_info)
@@ -1974,7 +1994,7 @@ class LibvirtConnTestCase(test.TestCase):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance)
-        cfg = conn.get_guest_config(instance, [], None, disk_info)
+        cfg = conn._get_guest_config(instance, [], {}, disk_info)
 
         had_pci = 0
         # care only about the PCI devices
@@ -2012,7 +2032,7 @@ class LibvirtConnTestCase(test.TestCase):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance)
-        cfg = conn.get_guest_config(instance, [], None, disk_info)
+        cfg = conn._get_guest_config(instance, [], {}, disk_info)
         had_pci = 0
         # care only about the PCI devices
         for dev in cfg.devices:
@@ -2033,6 +2053,8 @@ class LibvirtConnTestCase(test.TestCase):
                    cpu_mode=None,
                    group='libvirt')
 
+        self.test_instance['kernel_id'] = "fake_kernel_id"
+
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         instance_ref = db.instance_create(self.context, self.test_instance)
 
@@ -2041,10 +2063,56 @@ class LibvirtConnTestCase(test.TestCase):
 
         image_meta = {"properties": {"os_command_line":
             "fake_os_command_line"}}
-        cfg = conn.get_guest_config(instance_ref,
-                                    _fake_network_info(self.stubs, 1),
-                                    image_meta, disk_info)
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     image_meta, disk_info)
         self.assertEqual(cfg.os_cmdline, "fake_os_command_line")
+
+    def test_get_guest_config_os_command_line_without_kernel_id(self):
+        self.flags(virt_type="kvm",
+                cpu_mode=None,
+                group='libvirt')
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        instance_ref = db.instance_create(self.context, self.test_instance)
+
+        disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
+                                            instance_ref)
+
+        image_meta = {"properties": {"os_command_line":
+            "fake_os_command_line"}}
+
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     image_meta, disk_info)
+        self.assertIsNone(cfg.os_cmdline)
+
+    def test_get_guest_config_os_command_empty(self):
+        self.flags(virt_type="kvm",
+                   cpu_mode=None,
+                   group='libvirt')
+
+        self.test_instance['kernel_id'] = "fake_kernel_id"
+
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        instance_ref = db.instance_create(self.context, self.test_instance)
+
+        disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
+                                            instance_ref)
+
+        # the instance has 'root=/dev/vda console=tty0 console=ttyS0' set by
+        # default, so testing an empty string and None value in the
+        # os_command_line image property must pass
+        image_meta = {"properties": {"os_command_line": ""}}
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     image_meta, disk_info)
+        self.assertNotEqual(cfg.os_cmdline, "")
+
+        image_meta = {"properties": {"os_command_line": None}}
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     image_meta, disk_info)
+        self.assertIsNotNone(cfg.os_cmdline)
 
     def test_get_guest_config_armv7(self):
         def get_host_capabilities_stub(self):
@@ -2064,13 +2132,13 @@ class LibvirtConnTestCase(test.TestCase):
                                             instance_ref)
 
         self.stubs.Set(libvirt_driver.LibvirtDriver,
-                       "get_host_capabilities",
+                       "_get_host_capabilities",
                        get_host_capabilities_stub)
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
-        cfg = conn.get_guest_config(instance_ref,
-                                    _fake_network_info(self.stubs, 1),
-                                    None, disk_info)
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     {}, disk_info)
         self.assertEqual(cfg.os_mach_type, "vexpress-a15")
 
     def test_get_guest_config_aarch64(self):
@@ -2091,13 +2159,13 @@ class LibvirtConnTestCase(test.TestCase):
                                             instance_ref)
 
         self.stubs.Set(libvirt_driver.LibvirtDriver,
-                       "get_host_capabilities",
+                       "_get_host_capabilities",
                        get_host_capabilities_stub)
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
-        cfg = conn.get_guest_config(instance_ref,
-                                    _fake_network_info(self.stubs, 1),
-                                    None, disk_info)
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     {}, disk_info)
         self.assertEqual(cfg.os_mach_type, "virt")
 
     def test_get_guest_config_machine_type_through_image_meta(self):
@@ -2112,13 +2180,13 @@ class LibvirtConnTestCase(test.TestCase):
 
         image_meta = {"properties": {"hw_machine_type":
             "fake_machine_type"}}
-        cfg = conn.get_guest_config(instance_ref,
-                                    _fake_network_info(self.stubs, 1),
-                                    image_meta, disk_info)
+        cfg = conn._get_guest_config(instance_ref,
+                                     _fake_network_info(self.stubs, 1),
+                                     image_meta, disk_info)
         self.assertEqual(cfg.os_mach_type, "fake_machine_type")
 
     def _test_get_guest_config_ppc64(self, device_index):
-        """Test for nova.virt.libvirt.driver.LibvirtDriver.get_guest_config.
+        """Test for nova.virt.libvirt.driver.LibvirtDriver._get_guest_config.
         """
         self.flags(virt_type='kvm', group='libvirt')
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
@@ -2132,7 +2200,7 @@ class LibvirtConnTestCase(test.TestCase):
             with mock.patch.object(libvirt_driver.libvirt_utils,
                                    'get_arch',
                                    return_value=arch):
-                cfg = conn.get_guest_config(instance_ref, [],
+                cfg = conn._get_guest_config(instance_ref, [],
                                             image_meta,
                                             disk_info)
                 self.assertIsInstance(cfg.devices[device_index],
@@ -2156,9 +2224,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsNone(conf.cpu)
 
     def test_get_guest_cpu_config_default_kvm(self):
@@ -2177,9 +2245,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsInstance(conf.cpu,
                               vconfig.LibvirtConfigGuestCPU)
         self.assertEqual(conf.cpu.mode, "host-model")
@@ -2195,9 +2263,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsNone(conf.cpu)
 
     def test_get_guest_cpu_config_default_lxc(self):
@@ -2210,9 +2278,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsNone(conf.cpu)
 
     def test_get_guest_cpu_config_host_passthrough_new(self):
@@ -2228,9 +2296,9 @@ class LibvirtConnTestCase(test.TestCase):
         self.flags(cpu_mode="host-passthrough", group='libvirt')
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsInstance(conf.cpu,
                               vconfig.LibvirtConfigGuestCPU)
         self.assertEqual(conf.cpu.mode, "host-passthrough")
@@ -2249,9 +2317,9 @@ class LibvirtConnTestCase(test.TestCase):
         self.flags(cpu_mode="host-model", group='libvirt')
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsInstance(conf.cpu,
                               vconfig.LibvirtConfigGuestCPU)
         self.assertEqual(conf.cpu.mode, "host-model")
@@ -2272,9 +2340,9 @@ class LibvirtConnTestCase(test.TestCase):
                    group='libvirt')
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsInstance(conf.cpu,
                               vconfig.LibvirtConfigGuestCPU)
         self.assertEqual(conf.cpu.mode, "custom")
@@ -2294,10 +2362,10 @@ class LibvirtConnTestCase(test.TestCase):
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
         self.assertRaises(exception.NovaException,
-                          conn.get_guest_config,
+                          conn._get_guest_config,
                           instance_ref,
                           _fake_network_info(self.stubs, 1),
-                          None,
+                          {},
                           disk_info)
 
     def test_get_guest_cpu_config_host_model_old(self):
@@ -2310,8 +2378,8 @@ class LibvirtConnTestCase(test.TestCase):
             cpu.model = "Opteron_G4"
             cpu.vendor = "AMD"
 
-            cpu.features.append(vconfig.LibvirtConfigGuestCPUFeature("tm2"))
-            cpu.features.append(vconfig.LibvirtConfigGuestCPUFeature("ht"))
+            cpu.add_feature(vconfig.LibvirtConfigGuestCPUFeature("tm2"))
+            cpu.add_feature(vconfig.LibvirtConfigGuestCPUFeature("ht"))
 
             caps = vconfig.LibvirtConfigCaps()
             caps.host = vconfig.LibvirtConfigCapsHost()
@@ -2322,7 +2390,7 @@ class LibvirtConnTestCase(test.TestCase):
                        "getLibVersion",
                        get_lib_version_stub)
         self.stubs.Set(libvirt_driver.LibvirtDriver,
-                       "get_host_capabilities",
+                       "_get_host_capabilities",
                        get_host_capabilities_stub)
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         instance_ref = db.instance_create(self.context, self.test_instance)
@@ -2330,17 +2398,17 @@ class LibvirtConnTestCase(test.TestCase):
         self.flags(cpu_mode="host-model", group='libvirt')
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsInstance(conf.cpu,
                               vconfig.LibvirtConfigGuestCPU)
         self.assertIsNone(conf.cpu.mode)
         self.assertEqual(conf.cpu.model, "Opteron_G4")
         self.assertEqual(conf.cpu.vendor, "AMD")
         self.assertEqual(len(conf.cpu.features), 2)
-        self.assertEqual(conf.cpu.features[0].name, "tm2")
-        self.assertEqual(conf.cpu.features[1].name, "ht")
+        self.assertEqual(conf.cpu.features.pop().name, "tm2")
+        self.assertEqual(conf.cpu.features.pop().name, "ht")
 
     def test_get_guest_cpu_config_custom_old(self):
         def get_lib_version_stub():
@@ -2357,9 +2425,9 @@ class LibvirtConnTestCase(test.TestCase):
                    group='libvirt')
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        conf = conn.get_guest_config(instance_ref,
-                                     _fake_network_info(self.stubs, 1),
-                                     None, disk_info)
+        conf = conn._get_guest_config(instance_ref,
+                                      _fake_network_info(self.stubs, 1),
+                                      {}, disk_info)
         self.assertIsInstance(conf.cpu,
                               vconfig.LibvirtConfigGuestCPU)
         self.assertIsNone(conf.cpu.mode)
@@ -2655,70 +2723,8 @@ class LibvirtConnTestCase(test.TestCase):
 
         self.mox.ReplayAll()
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        devices = conn.get_all_block_devices()
+        devices = conn._get_all_block_devices()
         self.assertEqual(devices, ['/path/to/dev/1', '/path/to/dev/3'])
-
-    def test_get_disks(self):
-        xml = [
-            # NOTE(vish): id 0 is skipped
-            None,
-            """
-                <domain type='kvm'>
-                    <devices>
-                        <disk type='file'>
-                            <source file='filename'/>
-                            <target dev='vda' bus='virtio'/>
-                        </disk>
-                        <disk type='block'>
-                            <source dev='/path/to/dev/1'/>
-                            <target dev='vdb' bus='virtio'/>
-                        </disk>
-                    </devices>
-                </domain>
-            """,
-            """
-                <domain type='kvm'>
-                    <devices>
-                        <disk type='file'>
-                            <source file='filename'/>
-                            <target dev='vda' bus='virtio'/>
-                        </disk>
-                    </devices>
-                </domain>
-            """,
-            """
-                <domain type='kvm'>
-                    <devices>
-                        <disk type='file'>
-                            <source file='filename'/>
-                            <target dev='vda' bus='virtio'/>
-                        </disk>
-                        <disk type='block'>
-                            <source dev='/path/to/dev/3'/>
-                            <target dev='vdb' bus='virtio'/>
-                        </disk>
-                    </devices>
-                </domain>
-            """,
-        ]
-
-        def fake_lookup(id):
-            return FakeVirtDomain(xml[id])
-
-        def fake_lookup_name(name):
-            return FakeVirtDomain(xml[1])
-
-        self.mox.StubOutWithMock(libvirt_driver.LibvirtDriver, '_conn')
-        libvirt_driver.LibvirtDriver._conn.numOfDomains = lambda: 4
-        libvirt_driver.LibvirtDriver._conn.listDomainsID = lambda: range(4)
-        libvirt_driver.LibvirtDriver._conn.lookupByID = fake_lookup
-        libvirt_driver.LibvirtDriver._conn.lookupByName = fake_lookup_name
-        libvirt_driver.LibvirtDriver._conn.listDefinedDomains = lambda: []
-
-        self.mox.ReplayAll()
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        devices = conn.get_disks(conn.list_instances()[0])
-        self.assertEqual(devices, ['vda', 'vdb'])
 
     def test_snapshot_in_ami_format(self):
         expected_calls = [
@@ -3364,6 +3370,85 @@ class LibvirtConnTestCase(test.TestCase):
                           {"name": "fake-instance"},
                           "/dev/sda")
 
+    @mock.patch('nova.virt.libvirt.blockinfo.get_info_from_bdm')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._lookup_by_name')
+    def test_attach_volume_with_vir_domain_affect_live_flag(self,
+            mock_lookup_by_name, mock_get_info):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        instance = fake_instance.fake_instance_obj(mock.sentinel.ctx)
+        mock_dom = mock.MagicMock()
+        mock_lookup_by_name.return_value = mock_dom
+
+        connection_info = {"driver_volume_type": "fake",
+                           "data": {"device_path": "/fake",
+                                    "access_mode": "rw"}}
+        bdm = {'device_name': 'vdb',
+               'disk_bus': 'fake-bus',
+               'device_type': 'fake-type'}
+        disk_info = {'bus': bdm['disk_bus'], 'type': bdm['device_type'],
+                     'dev': 'vdb'}
+        mock_get_info.return_value = disk_info
+        mock_conf = mock.MagicMock()
+        flags = (fakelibvirt.VIR_DOMAIN_AFFECT_CONFIG |
+                 fakelibvirt.VIR_DOMAIN_AFFECT_LIVE)
+
+        with contextlib.nested(
+            mock.patch.object(conn, '_connect_volume',
+                              return_value=mock_conf),
+            mock.patch.object(conn, '_set_cache_mode')
+        ) as (mock_connect_volume, mock_set_cache_mode):
+            for state in (power_state.RUNNING, power_state.PAUSED):
+                mock_dom.info.return_value = [state, 512, 512, 2, 1234, 5678]
+
+                conn.attach_volume(self.context, connection_info, instance,
+                                   "/dev/vdb", disk_bus=bdm['disk_bus'],
+                                   device_type=bdm['device_type'])
+
+                mock_lookup_by_name.assert_called_with(instance['name'])
+                mock_get_info.assert_called_with(CONF.libvirt.virt_type, bdm)
+                mock_connect_volume.assert_called_with(
+                    connection_info, disk_info)
+                mock_set_cache_mode.assert_called_with(mock_conf)
+                mock_dom.attachDeviceFlags.assert_called_with(
+                    mock_conf.to_xml(), flags)
+
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_disk_xml')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._lookup_by_name')
+    def test_detach_volume_with_vir_domain_affect_live_flag(self,
+            mock_lookup_by_name, mock_get_disk_xml):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        instance = fake_instance.fake_instance_obj(mock.sentinel.ctx)
+        mock_dom = mock.MagicMock()
+        mock_xml = \
+            """
+            <disk type='file'>
+                <source file='/path/to/fake-volume'/>
+                <target dev='vdc' bus='virtio'/>
+            </disk>
+            """
+        mock_get_disk_xml.return_value = mock_xml
+
+        connection_info = {"driver_volume_type": "fake",
+                           "data": {"device_path": "/fake",
+                                    "access_mode": "rw"}}
+        flags = (fakelibvirt.VIR_DOMAIN_AFFECT_CONFIG |
+                 fakelibvirt.VIR_DOMAIN_AFFECT_LIVE)
+
+        with mock.patch.object(conn, '_disconnect_volume') as \
+                mock_disconnect_volume:
+            for state in (power_state.RUNNING, power_state.PAUSED):
+                mock_dom.info.return_value = [state, 512, 512, 2, 1234, 5678]
+                mock_lookup_by_name.return_value = mock_dom
+
+                conn.detach_volume(connection_info, instance, '/dev/vdc')
+
+                mock_lookup_by_name.assert_called_with(instance['name'])
+                mock_get_disk_xml.assert_called_with(mock_dom.XMLDesc(0),
+                                                     'vdc')
+                mock_dom.detachDeviceFlags.assert_called_with(mock_xml, flags)
+                mock_disconnect_volume.assert_called_with(
+                    connection_info, 'vdc')
+
     def test_multi_nic(self):
         instance_data = dict(self.test_instance)
         network_info = _fake_network_info(self.stubs, 2)
@@ -3371,7 +3456,8 @@ class LibvirtConnTestCase(test.TestCase):
         instance_ref = db.instance_create(self.context, instance_data)
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        xml = conn.to_xml(self.context, instance_ref, network_info, disk_info)
+        xml = conn._get_guest_xml(self.context, instance_ref,
+                                  network_info, disk_info)
         tree = etree.fromstring(xml)
         interfaces = tree.findall("./devices/interface")
         self.assertEqual(len(interfaces), 2)
@@ -3438,7 +3524,8 @@ class LibvirtConnTestCase(test.TestCase):
         network_info = _fake_network_info(self.stubs, 1)
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        xml = conn.to_xml(self.context, instance_ref, network_info, disk_info)
+        xml = conn._get_guest_xml(self.context, instance_ref,
+                                  network_info, disk_info)
         tree = etree.fromstring(xml)
 
         check = [
@@ -3492,8 +3579,8 @@ class LibvirtConnTestCase(test.TestCase):
             network_info = _fake_network_info(self.stubs, 1)
             disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                                 instance_ref)
-            xml = conn.to_xml(self.context, instance_ref,
-                              network_info, disk_info)
+            xml = conn._get_guest_xml(self.context, instance_ref,
+                                      network_info, disk_info)
             tree = etree.fromstring(xml)
 
             for i, (check, expected_result) in enumerate(checks):
@@ -3530,8 +3617,8 @@ class LibvirtConnTestCase(test.TestCase):
         drv = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        xml = drv.to_xml(self.context, instance_ref,
-                         network_info, disk_info, image_meta)
+        xml = drv._get_guest_xml(self.context, instance_ref,
+                                 network_info, disk_info, image_meta)
         tree = etree.fromstring(xml)
         disks = tree.findall('./devices/disk/driver')
         for disk in disks:
@@ -3544,8 +3631,8 @@ class LibvirtConnTestCase(test.TestCase):
         drv = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        xml = drv.to_xml(self.context, instance_ref,
-                         network_info, disk_info, image_meta)
+        xml = drv._get_guest_xml(self.context, instance_ref,
+                                 network_info, disk_info, image_meta)
         tree = etree.fromstring(xml)
         disks = tree.findall('./devices/disk/driver')
         for disk in disks:
@@ -3562,9 +3649,9 @@ class LibvirtConnTestCase(test.TestCase):
                                             instance_ref,
                                             block_device_info,
                                             image_meta)
-        xml = drv.to_xml(self.context, instance_ref,
-                         network_info, disk_info, image_meta,
-                         block_device_info=block_device_info)
+        xml = drv._get_guest_xml(self.context, instance_ref,
+                                 network_info, disk_info, image_meta,
+                                 block_device_info=block_device_info)
         tree = etree.fromstring(xml)
 
         got_disks = tree.findall('./devices/disk')
@@ -3590,8 +3677,8 @@ class LibvirtConnTestCase(test.TestCase):
         drv = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref)
-        xml = drv.to_xml(self.context, instance_ref,
-                         network_info, disk_info, image_meta)
+        xml = drv._get_guest_xml(self.context, instance_ref,
+                                 network_info, disk_info, image_meta)
         tree = etree.fromstring(xml)
         self.assertEqual(tree.find('./uuid').text,
                          instance_ref['uuid'])
@@ -3645,6 +3732,10 @@ class LibvirtConnTestCase(test.TestCase):
                 check = (lambda t: t.find('./os/kernel'), None)
             check_list.append(check)
 
+            if expect_kernel:
+                check = (lambda t: "no_timer_check" in t.find('./os/cmdline').
+                         text, hypervisor_type == "qemu")
+                check_list.append(check)
             # Hypervisors that only support vm_mode.HVM and Xen
             # should not produce configuration that results in kernel
             # arguments
@@ -3750,8 +3841,9 @@ class LibvirtConnTestCase(test.TestCase):
                 disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                                     instance_ref,
                                                     rescue=rescue)
-                xml = conn.to_xml(self.context, instance_ref,
-                                network_info, disk_info, rescue=rescue)
+                xml = conn._get_guest_xml(self.context, instance_ref,
+                                          network_info, disk_info,
+                                          rescue=rescue)
                 tree = etree.fromstring(xml)
                 for i, (check, expected_result) in enumerate(checks):
                     self.assertEqual(check(tree),
@@ -3806,6 +3898,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         fake_timer = FakeTime()
 
+        def fake_sleep(t):
+            fake_timer.sleep(t)
+
         # _fake_network_info must be called before create_fake_libvirt_mock(),
         # as _fake_network_info calls importutils.import_class() and
         # create_fake_libvirt_mock() mocks importutils.import_class().
@@ -3826,9 +3921,11 @@ class LibvirtConnTestCase(test.TestCase):
             self.stubs.Set(conn.firewall_driver,
                            'instance_filter_exists',
                            fake_none)
+            self.stubs.Set(greenthread,
+                           'sleep',
+                           fake_sleep)
             conn.ensure_filtering_rules_for_instance(instance_ref,
-                                                     network_info,
-                                                     time_module=fake_timer)
+                                                     network_info)
         except exception.NovaException as e:
             msg = ('The firewall filter for %s does not exist' %
                    instance_ref['name'])
@@ -4209,16 +4306,15 @@ class LibvirtConnTestCase(test.TestCase):
         self.mox.StubOutWithMock(driver, "block_device_info_get_mapping")
         driver.block_device_info_get_mapping(vol
             ).AndReturn(vol['block_device_mapping'])
-        self.mox.StubOutWithMock(conn, "volume_driver_method")
+        self.mox.StubOutWithMock(conn, "_connect_volume")
         for v in vol['block_device_mapping']:
             disk_info = {
                 'bus': "scsi",
                 'dev': v['mount_device'].rpartition("/")[2],
                 'type': "disk"
                 }
-            conn.volume_driver_method('connect_volume',
-                                      v['connection_info'],
-                                      disk_info)
+            conn._connect_volume(v['connection_info'],
+                                 disk_info)
         self.mox.StubOutWithMock(conn, 'plug_vifs')
         conn.plug_vifs(mox.IsA(inst_ref), nw_info)
 
@@ -4266,16 +4362,15 @@ class LibvirtConnTestCase(test.TestCase):
             c = context.get_admin_context()
             nw_info = FakeNetworkInfo()
             # Creating mocks
-            self.mox.StubOutWithMock(conn, "volume_driver_method")
+            self.mox.StubOutWithMock(conn, "_connect_volume")
             for v in vol['block_device_mapping']:
                 disk_info = {
                     'bus': "scsi",
                     'dev': v['mount_device'].rpartition("/")[2],
                     'type': "disk"
                     }
-                conn.volume_driver_method('connect_volume',
-                                          v['connection_info'],
-                                          disk_info)
+                conn._connect_volume(v['connection_info'],
+                                     disk_info)
             self.mox.StubOutWithMock(conn, 'plug_vifs')
             conn.plug_vifs(mox.IsA(inst_ref), nw_info)
             self.mox.ReplayAll()
@@ -4399,15 +4494,14 @@ class LibvirtConnTestCase(test.TestCase):
         with contextlib.nested(
             mock.patch.object(driver, 'block_device_info_get_mapping',
                               return_value=vol['block_device_mapping']),
-            mock.patch.object(conn, 'volume_driver_method')
-        ) as (block_device_info_get_mapping, volume_driver_method):
+            mock.patch.object(conn, '_disconnect_volume')
+        ) as (block_device_info_get_mapping, _disconnect_volume):
             conn.post_live_migration(cntx, inst_ref, vol)
 
             block_device_info_get_mapping.assert_has_calls([
                 mock.call(vol)])
-            volume_driver_method.assert_has_calls([
-                mock.call('disconnect_volume',
-                          v['connection_info'],
+            _disconnect_volume.assert_has_calls([
+                mock.call(v['connection_info'],
                           v['mount_device'].rpartition("/")[2])
                 for v in vol['block_device_mapping']])
 
@@ -4585,7 +4679,7 @@ class LibvirtConnTestCase(test.TestCase):
         instance = db.instance_create(self.context, instance_ref)
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.stubs.Set(conn, 'to_xml', fake_none)
+        self.stubs.Set(conn, '_get_guest_xml', fake_none)
         self.stubs.Set(conn, '_create_image', fake_create_image)
         self.stubs.Set(conn, '_create_domain_and_network', fake_none)
         self.stubs.Set(conn, 'get_info', fake_get_info)
@@ -4614,7 +4708,7 @@ class LibvirtConnTestCase(test.TestCase):
             return {'state': power_state.RUNNING}
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.stubs.Set(conn, 'to_xml', fake_none)
+        self.stubs.Set(conn, '_get_guest_xml', fake_none)
 
         self.stubs.Set(imagebackend.Image, 'cache', fake_cache)
         self.stubs.Set(conn, '_create_domain_and_network', fake_none)
@@ -4682,7 +4776,7 @@ class LibvirtConnTestCase(test.TestCase):
             return FakeLibvirtPciDevice()
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.stubs.Set(conn, 'to_xml', fake_none)
+        self.stubs.Set(conn, '_get_guest_xml', fake_none)
         self.stubs.Set(conn, '_create_image', fake_none)
         self.stubs.Set(conn, '_create_domain_and_network', fake_none)
         self.stubs.Set(conn, 'get_info', fake_get_info)
@@ -4751,7 +4845,7 @@ class LibvirtConnTestCase(test.TestCase):
         instance['os_type'] = os_type
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.stubs.Set(conn, 'to_xml', fake_none)
+        self.stubs.Set(conn, '_get_guest_xml', fake_none)
         self.stubs.Set(conn, '_create_domain_and_network', fake_none)
         self.stubs.Set(conn, 'get_info', fake_get_info)
         if mkfs:
@@ -4764,7 +4858,8 @@ class LibvirtConnTestCase(test.TestCase):
                                             None,
                                             image_meta)
         conn._create_image(context, instance, disk_info['mapping'])
-        conn.to_xml(self.context, instance, None, disk_info, image_meta)
+        conn._get_guest_xml(self.context, instance, None,
+                            disk_info, image_meta)
 
         wantFiles = [
             {'filename': '356a192b7913b04c54574d18c28d46e6395428ab',
@@ -4834,7 +4929,7 @@ class LibvirtConnTestCase(test.TestCase):
         instance = db.instance_create(self.context, instance_ref)
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.stubs.Set(conn, 'to_xml', fake_none)
+        self.stubs.Set(conn, '_get_guest_xml', fake_none)
         self.stubs.Set(conn, '_create_domain_and_network', fake_none)
         self.stubs.Set(conn, 'get_info', fake_get_info)
 
@@ -4844,7 +4939,8 @@ class LibvirtConnTestCase(test.TestCase):
                                             None,
                                             image_meta)
         conn._create_image(context, instance, disk_info['mapping'])
-        conn.to_xml(self.context, instance, None, disk_info, image_meta)
+        conn._get_guest_xml(self.context, instance, None,
+                            disk_info, image_meta)
 
         wantFiles = [
             {'filename': '356a192b7913b04c54574d18c28d46e6395428ab',
@@ -5107,13 +5203,13 @@ class LibvirtConnTestCase(test.TestCase):
         driver.block_device_info_get_mapping(vol
                                  ).AndReturn(vol['block_device_mapping'])
         self.mox.StubOutWithMock(libvirt_driver.LibvirtDriver,
-                                 "volume_driver_method")
+                                 "_disconnect_volume")
         if volume_fail:
-            libvirt_driver.LibvirtDriver.volume_driver_method(
+            libvirt_driver.LibvirtDriver._disconnect_volume(
                         mox.IgnoreArg(), mox.IgnoreArg(), mox.IgnoreArg()).\
                                      AndRaise(exception.VolumeNotFound('vol'))
         else:
-            libvirt_driver.LibvirtDriver.volume_driver_method(
+            libvirt_driver.LibvirtDriver._disconnect_volume(
                         mox.IgnoreArg(), mox.IgnoreArg(), mox.IgnoreArg())
         self.mox.StubOutWithMock(shutil, "rmtree")
         shutil.rmtree(os.path.join(CONF.instances_path,
@@ -5150,11 +5246,11 @@ class LibvirtConnTestCase(test.TestCase):
         self.stubs.Set(conn.firewall_driver,
                        'unfilter_instance', fake_unfilter_instance)
         self.stubs.Set(os.path, 'exists', fake_os_path_exists)
-        self.stubs.Set(instance_obj.Instance, 'fields',
+        self.stubs.Set(objects.Instance, 'fields',
                        {'id': int, 'uuid': str, 'cleaned': int})
-        self.stubs.Set(instance_obj.Instance, 'obj_load_attr',
+        self.stubs.Set(objects.Instance, 'obj_load_attr',
                        fake_obj_load_attr)
-        self.stubs.Set(instance_obj.Instance, 'save', fake_save)
+        self.stubs.Set(objects.Instance, 'save', fake_save)
 
         conn.destroy(self.context, instance, [], vol)
 
@@ -5225,12 +5321,12 @@ class LibvirtConnTestCase(test.TestCase):
                 self[attrname] = {}
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.stubs.Set(instance_obj.Instance, 'fields',
+        self.stubs.Set(objects.Instance, 'fields',
                        {'id': int, 'uuid': str, 'cleaned': int})
-        self.stubs.Set(instance_obj.Instance, 'obj_load_attr',
+        self.stubs.Set(objects.Instance, 'obj_load_attr',
                        fake_obj_load_attr)
 
-        inst_obj = instance_obj.Instance.get_by_uuid(None, instance['uuid'])
+        inst_obj = objects.Instance.get_by_uuid(None, instance['uuid'])
         self.assertFalse(conn.delete_instance_files(inst_obj))
         self.assertTrue(conn.delete_instance_files(inst_obj))
 
@@ -5433,7 +5529,7 @@ class LibvirtConnTestCase(test.TestCase):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
         self.mox.StubOutWithMock(conn, '_destroy')
         self.mox.StubOutWithMock(conn, 'get_instance_disk_info')
-        self.mox.StubOutWithMock(conn, 'to_xml')
+        self.mox.StubOutWithMock(conn, '_get_guest_xml')
         self.mox.StubOutWithMock(conn, '_create_images_and_backing')
         self.mox.StubOutWithMock(conn, '_create_domain_and_network')
 
@@ -5450,9 +5546,9 @@ class LibvirtConnTestCase(test.TestCase):
         conn._destroy(instance)
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance, block_device_info)
-        conn.to_xml(self.context, instance, network_info, disk_info,
-                    block_device_info=block_device_info,
-                    write_to_disk=True).AndReturn(dummyxml)
+        conn._get_guest_xml(self.context, instance, network_info, disk_info,
+                            block_device_info=block_device_info,
+                            write_to_disk=True).AndReturn(dummyxml)
         disk_info_json = '[{"virt_disk_size": 2}]'
         conn.get_instance_disk_info(instance["name"], dummyxml,
                             block_device_info).AndReturn(disk_info_json)
@@ -5796,8 +5892,35 @@ class LibvirtConnTestCase(test.TestCase):
             return jsonutils.dumps(fake_disks.get(instance_name))
         self.stubs.Set(conn, 'get_instance_disk_info', get_info)
 
-        result = conn.get_disk_over_committed_size_total()
+        result = conn._get_disk_over_committed_size_total()
         self.assertEqual(result, 10653532160)
+
+    def test_disk_over_committed_size_total_permission_denied(self):
+        driver = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        driver.list_instances = mock.Mock(return_value=['fake1', 'fake2'])
+
+        fake_disks = {'fake1': [{'type': 'qcow2', 'path': '/somepath/disk1',
+                                 'virt_disk_size': '10737418240',
+                                 'backing_file': '/somepath/disk1',
+                                 'disk_size': '83886080',
+                                 'over_committed_disk_size': '10653532160'}],
+                      'fake2': [{'type': 'raw', 'path': '/somepath/disk2',
+                                 'virt_disk_size': '0',
+                                 'backing_file': '/somepath/disk2',
+                                 'disk_size': '10737418240',
+                                 'over_committed_disk_size': '21474836480'}]}
+
+        def side_effect(arg):
+            if arg == 'fake1':
+                raise OSError(errno.EACCES, 'Permission denied')
+            if arg == 'fake2':
+                return jsonutils.dumps(fake_disks.get(arg))
+        get_disk_info = mock.Mock()
+        get_disk_info.side_effect = side_effect
+        driver.get_instance_disk_info = get_disk_info
+
+        result = driver._get_disk_over_committed_size_total()
+        self.assertEqual(21474836480, result)
 
     def test_cpu_info(self):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
@@ -5834,7 +5957,7 @@ class LibvirtConnTestCase(test.TestCase):
             return caps
 
         self.stubs.Set(libvirt_driver.LibvirtDriver,
-                       'get_host_capabilities',
+                       '_get_host_capabilities',
                        get_host_capabilities_stub)
 
         want = {"vendor": "AMD",
@@ -5842,7 +5965,7 @@ class LibvirtConnTestCase(test.TestCase):
                 "model": "Opteron_G4",
                 "arch": "x86_64",
                 "topology": {"cores": 2, "threads": 1, "sockets": 4}}
-        got = jsonutils.loads(conn.get_cpu_info())
+        got = jsonutils.loads(conn._get_cpu_info())
         self.assertEqual(want, got)
 
     def test_get_pcidev_info(self):
@@ -5902,7 +6025,7 @@ class LibvirtConnTestCase(test.TestCase):
 
         with mock.patch.object(conn._conn, 'listDevices',
                                side_effect=not_supported_exc):
-            self.assertEqual('[]', conn.get_pci_passthrough_devices())
+            self.assertEqual('[]', conn._get_pci_passthrough_devices())
 
         # We cache not supported status to avoid emitting too many logging
         # messages. Clear this value to test the other exception case.
@@ -5917,7 +6040,7 @@ class LibvirtConnTestCase(test.TestCase):
         with mock.patch.object(conn._conn, 'listDevices',
                                side_effect=other_exc):
             self.assertRaises(libvirt.libvirtError,
-                              conn.get_pci_passthrough_devices)
+                              conn._get_pci_passthrough_devices)
 
     def test_get_pci_passthrough_devices(self):
 
@@ -5934,7 +6057,7 @@ class LibvirtConnTestCase(test.TestCase):
                                              fake_nodeDeviceLookupByName
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
         self.stubs.Set(conn.dev_filter, 'device_assignable', lambda x: x)
-        actjson = conn.get_pci_passthrough_devices()
+        actjson = conn._get_pci_passthrough_devices()
 
         expectvfs = [
             {
@@ -6367,15 +6490,15 @@ class LibvirtConnTestCase(test.TestCase):
 
         driver = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         conn = driver._conn
-        self.mox.StubOutWithMock(driver, 'list_instance_ids')
+        self.mox.StubOutWithMock(driver, '_list_instance_ids')
         conn.lookupByID = self.mox.CreateMockAnything()
 
-        driver.list_instance_ids().AndReturn([1, 2])
+        driver._list_instance_ids().AndReturn([1, 2])
         conn.lookupByID(1).AndReturn(DiagFakeDomain(None))
         conn.lookupByID(2).AndReturn(DiagFakeDomain(5))
 
         self.mox.ReplayAll()
-        self.assertEqual(5, driver.get_vcpu_used())
+        self.assertEqual(5, driver._get_vcpu_used())
 
     def test_failing_vcpu_count_none(self):
         """Domain will return zero if the current number of vcpus used
@@ -6392,14 +6515,14 @@ class LibvirtConnTestCase(test.TestCase):
 
         driver = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         conn = driver._conn
-        self.mox.StubOutWithMock(driver, 'list_instance_ids')
+        self.mox.StubOutWithMock(driver, '_list_instance_ids')
         conn.lookupByID = self.mox.CreateMockAnything()
 
-        driver.list_instance_ids().AndReturn([1])
+        driver._list_instance_ids().AndReturn([1])
         conn.lookupByID(1).AndReturn(DiagFakeDomain())
 
         self.mox.ReplayAll()
-        self.assertEqual(0, driver.get_vcpu_used())
+        self.assertEqual(0, driver._get_vcpu_used())
 
     def test_get_instance_capabilities(self):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
@@ -6422,13 +6545,13 @@ class LibvirtConnTestCase(test.TestCase):
             return caps
 
         self.stubs.Set(libvirt_driver.LibvirtDriver,
-                       'get_host_capabilities',
+                       '_get_host_capabilities',
                        get_host_capabilities_stub)
 
         want = [('x86_64', 'kvm', 'hvm'),
                 ('x86_64', 'qemu', 'hvm'),
                 ('i686', 'kvm', 'hvm')]
-        got = conn.get_instance_capabilities()
+        got = conn._get_instance_capabilities()
         self.assertEqual(want, got)
 
     def test_event_dispatch(self):
@@ -6514,7 +6637,7 @@ class LibvirtConnTestCase(test.TestCase):
         fake_conf = FakeConfigGuestDisk()
 
         fake_conf.source_type = 'file'
-        conn.set_cache_mode(fake_conf)
+        conn._set_cache_mode(fake_conf)
         self.assertEqual(fake_conf.driver_cache, 'directsync')
 
     def test_set_cache_mode_invalid_mode(self):
@@ -6523,7 +6646,7 @@ class LibvirtConnTestCase(test.TestCase):
         fake_conf = FakeConfigGuestDisk()
 
         fake_conf.source_type = 'file'
-        conn.set_cache_mode(fake_conf)
+        conn._set_cache_mode(fake_conf)
         self.assertIsNone(fake_conf.driver_cache)
 
     def test_set_cache_mode_invalid_object(self):
@@ -6532,7 +6655,7 @@ class LibvirtConnTestCase(test.TestCase):
         fake_conf = FakeConfigGuest()
 
         fake_conf.driver_cache = 'fake'
-        conn.set_cache_mode(fake_conf)
+        conn._set_cache_mode(fake_conf)
         self.assertEqual(fake_conf.driver_cache, 'fake')
 
     def _test_shared_storage_detection(self, is_same):
@@ -6599,9 +6722,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         self.log_error_called = False
 
-        def fake_error(msg):
+        def fake_error(msg, *args):
             self.log_error_called = True
-            self.assertIn(fake_xml, msg)
+            self.assertIn(fake_xml, msg % args)
 
         self.stubs.Set(nova.virt.libvirt.driver.LOG, 'error', fake_error)
 
@@ -6624,9 +6747,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         self.log_error_called = False
 
-        def fake_error(msg):
+        def fake_error(msg, *args):
             self.log_error_called = True
-            self.assertIn(fake_xml, msg)
+            self.assertIn(fake_xml, msg % args)
 
         self.stubs.Set(fake_domain, 'createWithFlags', fake_createWithFlags)
         self.stubs.Set(nova.virt.libvirt.driver.LOG, 'error', fake_error)
@@ -6651,9 +6774,9 @@ class LibvirtConnTestCase(test.TestCase):
 
         self.log_error_called = False
 
-        def fake_error(msg):
+        def fake_error(msg, *args):
             self.log_error_called = True
-            self.assertIn(fake_xml, msg)
+            self.assertIn(fake_xml, msg % args)
 
         self.stubs.Set(nova.virt.libvirt.driver.LOG, 'error', fake_error)
 
@@ -6759,14 +6882,13 @@ class LibvirtConnTestCase(test.TestCase):
             mock.patch.object(conn, '_lookup_by_name',
                               side_effect=exception.InstanceNotFound(
                                   instance_id=instance.name)),
-            mock.patch.object(conn, 'volume_driver_method')
-        ) as (_lookup_by_name, volume_driver_method):
+            mock.patch.object(conn, '_disconnect_volume')
+        ) as (_lookup_by_name, _disconnect_volume):
             connection_info = {'driver_volume_type': 'fake'}
             conn.detach_volume(connection_info, instance, '/dev/sda')
             _lookup_by_name.assert_called_once_with(instance.name)
-            volume_driver_method.assert_called_once_with('disconnect_volume',
-                                                         connection_info,
-                                                         'sda')
+            _disconnect_volume.assert_called_once_with(connection_info,
+                                                       'sda')
 
     def _test_attach_detach_interface_get_config(self, method_name):
         """Tests that the get_config() method is properly called in
@@ -6886,8 +7008,8 @@ class LibvirtConnTestCase(test.TestCase):
         conn._conn.getHostname().AndReturn('foo')
         conn._conn.getHostname().AndReturn('bar')
         self.mox.ReplayAll()
-        self.assertEqual('foo', conn.get_hypervisor_hostname())
-        self.assertEqual('foo', conn.get_hypervisor_hostname())
+        self.assertEqual('foo', conn._get_hypervisor_hostname())
+        self.assertEqual('foo', conn._get_hypervisor_hostname())
 
     def test_get_connection_serial(self):
 
@@ -6979,8 +7101,10 @@ class LibvirtConnTestCase(test.TestCase):
         def fake_to_xml(context, instance, network_info, disk_info,
                         image_meta=None, rescue=None,
                         block_device_info=None, write_to_disk=False):
-            conf = conn.get_guest_config(instance, network_info, image_meta,
-                                         disk_info, rescue, block_device_info)
+            if image_meta is None:
+                image_meta = {}
+            conf = conn._get_guest_config(instance, network_info, image_meta,
+                                          disk_info, rescue, block_device_info)
             self.resultXML = conf.to_xml()
             return self.resultXML
 
@@ -7023,31 +7147,33 @@ class LibvirtConnTestCase(test.TestCase):
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
         self.stubs.Set(conn,
-                       'to_xml',
+                       '_get_guest_xml',
                        fake_to_xml)
         self.stubs.Set(conn,
                        '_lookup_by_name',
                        fake_lookup_name)
         block_device_info = {'block_device_mapping': [
-                    {'guest_format': None,
-                     'boot_index': 0,
-                     'mount_device': '/dev/vda',
-                     'connection_info':
-                        {'driver_volume_type': 'iscsi'},
-                     'disk_bus': 'virtio',
-                     'device_type': 'disk',
-                     'delete_on_termination': False}
+                mocked_bdm(1, {'guest_format': None,
+                               'boot_index': 0,
+                               'mount_device': '/dev/vda',
+                               'connection_info':
+                                   {'driver_volume_type': 'iscsi'},
+                               'disk_bus': 'virtio',
+                               'device_type': 'disk',
+                               'delete_on_termination': False}),
                     ]}
         conn.post_live_migration_at_destination(self.context, instance,
                                         network_info, True,
                                         block_device_info=block_device_info)
         self.assertTrue('fake' in self.resultXML)
+        self.assertTrue(
+            block_device_info['block_device_mapping'][0].save.called)
 
     def test_create_propagates_exceptions(self):
         self.flags(virt_type='lxc', group='libvirt')
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        instance = instance_obj.Instance(id=1, uuid='fake-uuid')
+        instance = objects.Instance(id=1, uuid='fake-uuid')
 
         with contextlib.nested(
               mock.patch.object(conn, 'plug_vifs'),
@@ -7066,7 +7192,7 @@ class LibvirtConnTestCase(test.TestCase):
         self.flags(virt_type='lxc', group='libvirt')
 
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        instance = instance_obj.Instance(id=1, uuid='fake-uuid')
+        instance = objects.Instance(id=1, uuid='fake-uuid')
 
         with contextlib.nested(
               mock.patch.object(conn, 'plug_vifs'),
@@ -7108,7 +7234,7 @@ class LibvirtConnTestCase(test.TestCase):
         prepare.side_effect = fake_prepare
         conn = libvirt_driver.LibvirtDriver(virtapi, False)
 
-        instance = instance_obj.Instance(id=1, uuid='fake-uuid')
+        instance = objects.Instance(id=1, uuid='fake-uuid')
         vifs = [{'id': 'vif1', 'active': False},
                 {'id': 'vif2', 'active': False}]
 
@@ -7252,47 +7378,47 @@ class HostStateTestCase(test.TestCase):
     class FakeConnection(object):
         """Fake connection object."""
 
-        def get_vcpu_total(self):
+        def _get_vcpu_total(self):
             return 1
 
-        def get_vcpu_used(self):
+        def _get_vcpu_used(self):
             return 0
 
-        def get_cpu_info(self):
+        def _get_cpu_info(self):
             return HostStateTestCase.cpu_info
 
-        def get_disk_over_committed_size_total(self):
+        def _get_disk_over_committed_size_total(self):
             return 0
 
-        def get_local_gb_info(self):
+        def _get_local_gb_info(self):
             return {'total': 100, 'used': 20, 'free': 80}
 
-        def get_memory_mb_total(self):
+        def _get_memory_mb_total(self):
             return 497
 
-        def get_memory_mb_used(self):
+        def _get_memory_mb_used(self):
             return 88
 
-        def get_hypervisor_type(self):
+        def _get_hypervisor_type(self):
             return 'QEMU'
 
-        def get_hypervisor_version(self):
+        def _get_hypervisor_version(self):
             return 13091
 
-        def get_hypervisor_hostname(self):
+        def _get_hypervisor_hostname(self):
             return 'compute1'
 
         def get_host_uptime(self):
             return ('10:01:16 up  1:36,  6 users,  '
                     'load average: 0.21, 0.16, 0.19')
 
-        def get_disk_available_least(self):
+        def _get_disk_available_least(self):
             return 13091
 
-        def get_instance_capabilities(self):
+        def _get_instance_capabilities(self):
             return HostStateTestCase.instance_caps
 
-        def get_pci_passthrough_devices(self):
+        def _get_pci_passthrough_devices(self):
             return jsonutils.dumps(HostStateTestCase.pci_devices)
 
     def test_update_status(self):
@@ -7606,15 +7732,15 @@ class IptablesFirewallTestCase(test.TestCase):
         self.fw.instance_rules(instance_ref,
                                mox.IgnoreArg()).AndReturn((None, None))
         self.fw.add_filters_for_instance(instance_ref, mox.IgnoreArg(),
-                                         mox.IgnoreArg())
+                                         mox.IgnoreArg(), mox.IgnoreArg())
         self.fw.instance_rules(instance_ref,
                                mox.IgnoreArg()).AndReturn((None, None))
         self.fw.add_filters_for_instance(instance_ref, mox.IgnoreArg(),
-                                         mox.IgnoreArg())
+                                         mox.IgnoreArg(), mox.IgnoreArg())
         self.mox.ReplayAll()
 
         self.fw.prepare_instance_filter(instance_ref, mox.IgnoreArg())
-        self.fw.instances[instance_ref['id']] = instance_ref
+        self.fw.instance_info[instance_ref['id']] = (instance_ref, None)
         self.fw.do_refresh_security_group_rules("fake")
 
     def test_unfilter_instance_undefines_nwfilter(self):
@@ -7917,6 +8043,45 @@ class NWFilterTestCase(test.TestCase):
                                                           'in filter')
 
         db.instance_destroy(admin_ctxt, instance_ref['uuid'])
+
+    def test_multinic_base_filter_selection(self):
+        fakefilter = NWFilterFakes()
+        self.fw._conn.nwfilterDefineXML = fakefilter.filterDefineXMLMock
+        self.fw._conn.nwfilterLookupByName = fakefilter.nwfilterLookupByName
+
+        instance_ref = self._create_instance()
+        inst_id = instance_ref['id']
+        inst_uuid = instance_ref['uuid']
+
+        self.security_group = self.setup_and_return_security_group()
+
+        db.instance_add_security_group(self.context, inst_uuid,
+                                       self.security_group['id'])
+
+        instance = db.instance_get(self.context, inst_id)
+
+        network_info = _fake_network_info(self.stubs, 2)
+        network_info[0]['network']['subnets'][0]['meta']['dhcp_server'] = \
+            '1.1.1.1'
+
+        self.fw.setup_basic_filtering(instance, network_info)
+
+        def assert_filterref(instance, vif, expected=None):
+            expected = expected or []
+            nic_id = vif['address'].replace(':', '')
+            filter_name = self.fw._instance_filter_name(instance, nic_id)
+            f = fakefilter.nwfilterLookupByName(filter_name)
+            tree = etree.fromstring(f.xml)
+            frefs = [fr.get('filter') for fr in tree.findall('filterref')]
+            self.assertTrue(set(expected) == set(frefs))
+
+        assert_filterref(instance, network_info[0], expected=['nova-base'])
+        assert_filterref(instance, network_info[1], expected=['nova-nodhcp'])
+
+        db.instance_remove_security_group(self.context, inst_uuid,
+                                          self.security_group['id'])
+        self.teardown_security_group()
+        db.instance_destroy(context.get_admin_context(), instance_ref['uuid'])
 
 
 class LibvirtUtilsTestCase(test.TestCase):
@@ -8246,6 +8411,7 @@ class LibvirtDriverTestCase(test.TestCase):
         super(LibvirtDriverTestCase, self).setUp()
         self.libvirtconnection = libvirt_driver.LibvirtDriver(
             fake.FakeVirtAPI(), read_only=True)
+        self.context = context.get_admin_context()
 
     def _create_instance(self, params=None):
         """Create a test instance."""
@@ -8273,7 +8439,7 @@ class LibvirtDriverTestCase(test.TestCase):
         inst['system_metadata'] = sys_meta
 
         inst.update(params)
-        return db.instance_create(context.get_admin_context(), inst)
+        return db.instance_create(self.context, inst)
 
     def test_migrate_disk_and_power_off_exception(self):
         """Test for nova.virt.libvirt.libvirt_driver.LivirtConnection
@@ -8369,6 +8535,66 @@ class LibvirtDriverTestCase(test.TestCase):
         out = self.libvirtconnection.migrate_disk_and_power_off(
                None, ins_ref, '10.0.0.1', flavor, None)
         self.assertEqual(out, disk_info_text)
+
+    @mock.patch('nova.utils.execute')
+    @mock.patch('nova.virt.libvirt.utils.copy_image')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._destroy')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver.get_host_ip_addr')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver'
+                '.get_instance_disk_info')
+    def test_migrate_disk_and_power_off_swap(self, mock_get_disk_info,
+                                             get_host_ip_addr,
+                                             mock_destroy,
+                                             mock_copy_image,
+                                             mock_execute):
+        """Test for nova.virt.libvirt.libvirt_driver.LivirtConnection
+        .migrate_disk_and_power_off.
+        """
+        self.copy_or_move_swap_called = False
+
+        # 10G root and 512M swap disk
+        disk_info = [{'disk_size': 1, 'type': 'qcow2',
+                      'virt_disk_size': 10737418240, 'path': '/test/disk',
+                      'backing_file': '/base/disk'},
+                     {'disk_size': 1, 'type': 'qcow2',
+                      'virt_disk_size': 536870912, 'path': '/test/disk.swap',
+                      'backing_file': '/base/swap_512'}]
+        disk_info_text = jsonutils.dumps(disk_info)
+        mock_get_disk_info.return_value = disk_info_text
+        get_host_ip_addr.return_value = '10.0.0.1'
+
+        def fake_copy_image(*args, **kwargs):
+            # disk.swap should not be touched since it is skipped over
+            if '/test/disk.swap' in list(args):
+                self.copy_or_move_swap_called = True
+
+        def fake_execute(*args, **kwargs):
+            # disk.swap should not be touched since it is skipped over
+            if set(['mv', '/test/disk.swap']).issubset(list(args)):
+                self.copy_or_move_swap_called = True
+
+        mock_copy_image.side_effect = fake_copy_image
+        mock_execute.side_effect = fake_execute
+
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+
+        # Original instance config
+        instance = self._create_instance({'root_gb': 10,
+                                          'ephemeral_gb': 0})
+
+        # Re-size fake instance to 20G root and 1024M swap disk
+        flavor = {'root_gb': 20, 'ephemeral_gb': 0, 'swap': 1024}
+
+        # Destination is same host
+        out = conn.migrate_disk_and_power_off(None, instance, '10.0.0.1',
+                                              flavor, None)
+
+        mock_get_disk_info.assert_called_once_with(instance.name,
+                                                   block_device_info=None)
+        self.assertTrue(get_host_ip_addr.called)
+        mock_destroy.assert_called_once_with(instance)
+        self.assertFalse(self.copy_or_move_swap_called)
+        self.assertEqual(disk_info_text, out)
 
     def test_migrate_disk_and_power_off_resize_error(self):
         instance = self._create_instance()
@@ -8574,7 +8800,7 @@ class LibvirtDriverTestCase(test.TestCase):
         self.stubs.Set(libvirt_driver.disk, 'extend', fake_extend)
         self.stubs.Set(libvirt_driver.disk, 'can_resize_image',
                        fake_can_resize_image)
-        self.stubs.Set(self.libvirtconnection, 'to_xml', fake_to_xml)
+        self.stubs.Set(self.libvirtconnection, '_get_guest_xml', fake_to_xml)
         self.stubs.Set(self.libvirtconnection, 'plug_vifs', fake_plug_vifs)
         self.stubs.Set(self.libvirtconnection, '_create_image',
                        fake_create_image)
@@ -8634,7 +8860,7 @@ class LibvirtDriverTestCase(test.TestCase):
                         block_device_info=None):
             return ""
 
-        self.stubs.Set(self.libvirtconnection, 'to_xml', fake_to_xml)
+        self.stubs.Set(self.libvirtconnection, '_get_guest_xml', fake_to_xml)
         self.stubs.Set(self.libvirtconnection, 'plug_vifs', fake_plug_vifs)
         self.stubs.Set(utils, 'execute', fake_execute)
         fw = base_firewall.NoopFirewallDriver()
@@ -8683,7 +8909,8 @@ class LibvirtDriverTestCase(test.TestCase):
         self.mox.StubOutWithMock(utils, 'execute')
 
         self.stubs.Set(blockinfo, 'get_disk_info', lambda *a: None)
-        self.stubs.Set(self.libvirtconnection, 'to_xml', lambda *a, **k: None)
+        self.stubs.Set(self.libvirtconnection, '_get_guest_xml',
+                       lambda *a, **k: None)
         self.stubs.Set(self.libvirtconnection, '_create_domain_and_network',
                        lambda *a: None)
         self.stubs.Set(loopingcall, 'FixedIntervalLoopingCall',
@@ -8744,7 +8971,8 @@ class LibvirtDriverTestCase(test.TestCase):
         self.mox.StubOutWithMock(libvirt_utils, 'get_instance_path')
         self.mox.StubOutWithMock(utils, 'execute')
 
-        libvirt_utils.get_instance_path(ins_ref).AndReturn('/fake/inst')
+        libvirt_utils.get_instance_path(ins_ref,
+                forceold=True).AndReturn('/fake/inst')
         utils.execute('rm', '-rf', '/fake/inst_resize', delay_on_retry=True,
                       attempts=5)
 
@@ -8779,7 +9007,8 @@ class LibvirtDriverTestCase(test.TestCase):
         self.mox.StubOutWithMock(libvirt_utils, 'get_instance_path')
         self.mox.StubOutWithMock(utils, 'execute')
 
-        libvirt_utils.get_instance_path(ins_ref).AndReturn('/fake/inst')
+        libvirt_utils.get_instance_path(ins_ref,
+                forceold=True).AndReturn('/fake/inst')
         utils.execute('rm', '-rf', '/fake/inst_resize', delay_on_retry=True,
                       attempts=5)
 
@@ -8807,10 +9036,9 @@ class LibvirtDriverTestCase(test.TestCase):
             instance_name)
 
     @mock.patch('os.path.exists')
-    @mock.patch('nova.virt.libvirt.utils.list_logical_volumes')
+    @mock.patch('nova.virt.libvirt.lvm.list_volumes')
     def test_lvm_disks(self, listlvs, exists):
-        instance = instance_obj.Instance(uuid='fake-uuid',
-                                         id=1)
+        instance = objects.Instance(uuid='fake-uuid', id=1)
         self.flags(images_volume_group='vols', group='libvirt')
         exists.return_value = True
         listlvs.return_value = ['fake-uuid_foo',
@@ -8972,6 +9200,87 @@ class LibvirtDriverTestCase(test.TestCase):
             None,  # files
         ]
         self._test_inject_data(driver_params, disk_params, called=False)
+
+    def _test_attach_detach_interface(self, method, power_state,
+                                      expected_flags):
+        instance = self._create_instance()
+        network_info = _fake_network_info(self.stubs, 1)
+        domain = FakeVirtDomain()
+        self.mox.StubOutWithMock(self.libvirtconnection, '_lookup_by_name')
+        self.mox.StubOutWithMock(self.libvirtconnection.firewall_driver,
+                                 'setup_basic_filtering')
+        self.mox.StubOutWithMock(domain, 'attachDeviceFlags')
+        self.mox.StubOutWithMock(domain, 'info')
+
+        self.libvirtconnection._lookup_by_name(
+            'instance-00000001').AndReturn(domain)
+        if method == 'attach_interface':
+            self.libvirtconnection.firewall_driver.setup_basic_filtering(
+                instance, [network_info[0]])
+
+        fake_flavor = flavor_obj.Flavor.get_by_id(
+            self.context, instance['instance_type_id'])
+        if method == 'attach_interface':
+            fake_image_meta = {'id': instance['image_ref']}
+        elif method == 'detach_interface':
+            fake_image_meta = None
+        expected = self.libvirtconnection.vif_driver.get_config(
+            instance, network_info[0], fake_image_meta, fake_flavor)
+
+        self.mox.StubOutWithMock(self.libvirtconnection.vif_driver,
+                                 'get_config')
+        self.libvirtconnection.vif_driver.get_config(
+            instance, network_info[0],
+            fake_image_meta,
+            mox.IsA(flavor_obj.Flavor)).AndReturn(expected)
+        domain.info().AndReturn([power_state])
+        if method == 'attach_interface':
+            domain.attachDeviceFlags(expected.to_xml(), expected_flags)
+        elif method == 'detach_interface':
+            domain.detachDeviceFlags(expected.to_xml(), expected_flags)
+
+        self.mox.ReplayAll()
+        if method == 'attach_interface':
+            self.libvirtconnection.attach_interface(
+                instance, fake_image_meta, network_info[0])
+        elif method == 'detach_interface':
+            self.libvirtconnection.detach_interface(
+                instance, network_info[0])
+        self.mox.VerifyAll()
+
+    def test_attach_interface_with_running_instance(self):
+        self._test_attach_detach_interface(
+            'attach_interface', power_state.RUNNING,
+            expected_flags=(libvirt.VIR_DOMAIN_AFFECT_CONFIG |
+                            libvirt.VIR_DOMAIN_AFFECT_LIVE))
+
+    def test_attach_interface_with_pause_instance(self):
+        self._test_attach_detach_interface(
+            'attach_interface', power_state.PAUSED,
+            expected_flags=(libvirt.VIR_DOMAIN_AFFECT_CONFIG |
+                            libvirt.VIR_DOMAIN_AFFECT_LIVE))
+
+    def test_attach_interface_with_shutdown_instance(self):
+        self._test_attach_detach_interface(
+            'attach_interface', power_state.SHUTDOWN,
+            expected_flags=(libvirt.VIR_DOMAIN_AFFECT_CONFIG))
+
+    def test_detach_interface_with_running_instance(self):
+        self._test_attach_detach_interface(
+            'detach_interface', power_state.RUNNING,
+            expected_flags=(libvirt.VIR_DOMAIN_AFFECT_CONFIG |
+                            libvirt.VIR_DOMAIN_AFFECT_LIVE))
+
+    def test_detach_interface_with_pause_instance(self):
+        self._test_attach_detach_interface(
+            'detach_interface', power_state.PAUSED,
+            expected_flags=(libvirt.VIR_DOMAIN_AFFECT_CONFIG |
+                            libvirt.VIR_DOMAIN_AFFECT_LIVE))
+
+    def test_detach_interface_with_shutdown_instance(self):
+        self._test_attach_detach_interface(
+            'detach_interface', power_state.SHUTDOWN,
+            expected_flags=(libvirt.VIR_DOMAIN_AFFECT_CONFIG))
 
 
 class LibvirtVolumeUsageTestCase(test.TestCase):
@@ -9272,14 +9581,14 @@ class LibvirtVolumeSnapshotTestCase(test.TestCase):
         domain.XMLDesc(0).AndReturn(self.dom_xml)
 
         self.mox.StubOutWithMock(self.conn, '_lookup_by_name')
-        self.mox.StubOutWithMock(self.conn, 'has_min_version')
+        self.mox.StubOutWithMock(self.conn, '_has_min_version')
         self.mox.StubOutWithMock(domain, 'blockRebase')
         self.mox.StubOutWithMock(domain, 'blockCommit')
         self.mox.StubOutWithMock(domain, 'blockJobInfo')
 
         self.conn._lookup_by_name('instance-%s' % instance['id']).\
             AndReturn(domain)
-        self.conn.has_min_version(mox.IgnoreArg()).AndReturn(True)
+        self.conn._has_min_version(mox.IgnoreArg()).AndReturn(True)
 
         domain.blockRebase('vda', 'snap.img', 0, 0)
 
@@ -9304,14 +9613,14 @@ class LibvirtVolumeSnapshotTestCase(test.TestCase):
         domain.XMLDesc(0).AndReturn(self.dom_xml)
 
         self.mox.StubOutWithMock(self.conn, '_lookup_by_name')
-        self.mox.StubOutWithMock(self.conn, 'has_min_version')
+        self.mox.StubOutWithMock(self.conn, '_has_min_version')
         self.mox.StubOutWithMock(domain, 'blockRebase')
         self.mox.StubOutWithMock(domain, 'blockCommit')
         self.mox.StubOutWithMock(domain, 'blockJobInfo')
 
         self.conn._lookup_by_name('instance-%s' % instance['id']).\
             AndReturn(domain)
-        self.conn.has_min_version(mox.IgnoreArg()).AndReturn(True)
+        self.conn._has_min_version(mox.IgnoreArg()).AndReturn(True)
 
         domain.blockCommit('vda', 'other-snap.img', 'snap.img', 0, 0)
 
@@ -9395,9 +9704,9 @@ class LibvirtVolumeSnapshotTestCase(test.TestCase):
 
         self.mox.StubOutWithMock(self.conn, '_lookup_by_name')
         self.mox.StubOutWithMock(self.conn, '_volume_api')
-        self.mox.StubOutWithMock(self.conn, 'has_min_version')
+        self.mox.StubOutWithMock(self.conn, '_has_min_version')
 
-        self.conn.has_min_version(mox.IgnoreArg()).AndReturn(True)
+        self.conn._has_min_version(mox.IgnoreArg()).AndReturn(True)
 
         self.conn._volume_api.update_snapshot_status(
             self.c, self.snapshot_id, 'error_deleting')

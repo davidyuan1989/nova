@@ -24,6 +24,7 @@ from nova import exception
 from nova.openstack.common import jsonutils
 from nova import test
 from nova.tests.api.openstack import fakes
+from nova.tests import fake_instance
 
 CONF = cfg.CONF
 CONF.import_opt('password_length', 'nova.utils')
@@ -33,14 +34,11 @@ def fake_compute_api(*args, **kwargs):
     return True
 
 
-def fake_compute_api_get(self, context, instance_id, expected_attrs=None,
-                         want_objects=False):
-    return {
-        'id': 1,
-        'uuid': instance_id,
-        'vm_state': vm_states.ACTIVE,
-        'task_state': None, 'host': 'host1'
-    }
+def fake_compute_api_get(self, context, instance_id, want_objects=False,
+                         **kwargs):
+    return fake_instance.fake_instance_obj(context, id=1, uuid=instance_id,
+                                           vm_state=vm_states.ACTIVE,
+                                           task_state=None, host='host1')
 
 
 def fake_service_get_by_compute_host(self, context, host):
@@ -237,3 +235,10 @@ class EvacuateTest(test.NoDBTestCase):
             self.assertIn('admin_password', resp_json)
         else:
             self.assertIsNone(resp_json.get('admin_password'))
+
+    def test_evacuate_to_same_host(self):
+        req, app = self._gen_request_with_app({'host': 'host1',
+                                               'on_shared_storage': 'False',
+                                               'admin_password': 'MyNewPass'})
+        res = req.get_response(app)
+        self.assertEqual(400, res.status_int)

@@ -35,7 +35,7 @@ driver_opts = [
                help='Driver to use for controlling virtualization. Options '
                    'include: libvirt.LibvirtDriver, xenapi.XenAPIDriver, '
                    'fake.FakeDriver, baremetal.BareMetalDriver, '
-                   'vmwareapi.VMwareESXDriver, vmwareapi.VMwareVCDriver'),
+                   'vmwareapi.VMwareVCDriver'),
     cfg.StrOpt('default_ephemeral_format',
                help='The default format an ephemeral_volume will be '
                     'formatted with on creation.'),
@@ -648,10 +648,10 @@ class ComputeDriver(object):
         :param dest: destination host
         :param post_method:
             post operation method.
-            expected nova.compute.manager.post_live_migration.
+            expected nova.compute.manager._post_live_migration.
         :param recover_method:
             recovery method when any exception occurs.
-            expected nova.compute.manager.recover_live_migration.
+            expected nova.compute.manager._rollback_live_migration.
         :param block_migration: if true, migrate VM disk.
         :param migrate_data: implementation specific params.
 
@@ -1199,7 +1199,7 @@ class ComputeDriver(object):
         """
 
         if not self._compute_event_callback:
-            LOG.debug(_("Discarding event %s") % str(event))
+            LOG.debug("Discarding event %s", str(event))
             return
 
         if not isinstance(event, virtevent.Event):
@@ -1207,7 +1207,7 @@ class ComputeDriver(object):
                 _("Event must be an instance of nova.virt.event.Event"))
 
         try:
-            LOG.debug(_("Emitting event %s") % str(event))
+            LOG.debug("Emitting event %s", str(event))
             self._compute_event_callback(event)
         except Exception as ex:
             LOG.error(_("Exception dispatching event %(event)s: %(ex)s"),

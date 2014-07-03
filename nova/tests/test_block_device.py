@@ -19,13 +19,53 @@ Tests for Block Device utility functions.
 
 from nova import block_device
 from nova import exception
-from nova.objects import block_device as block_device_obj
+from nova import objects
 from nova import test
 from nova.tests import fake_block_device
 from nova.tests import matchers
 
 
 class BlockDeviceTestCase(test.NoDBTestCase):
+    def setUp(self):
+        super(BlockDeviceTestCase, self).setUp()
+        BDM = block_device.BlockDeviceDict
+
+        self.new_mapping = [
+            BDM({'id': 1, 'instance_uuid': 'fake-instance',
+                 'device_name': '/dev/sdb1',
+                 'source_type': 'blank',
+                 'destination_type': 'local',
+                 'delete_on_termination': True,
+                 'volume_size': 1,
+                 'guest_format': 'swap',
+                 'boot_index': -1}),
+            BDM({'id': 2, 'instance_uuid': 'fake-instance',
+                 'device_name': '/dev/sdc1',
+                 'source_type': 'blank',
+                 'destination_type': 'local',
+                 'volume_size': 10,
+                 'delete_on_termination': True,
+                 'boot_index': -1}),
+            BDM({'id': 3, 'instance_uuid': 'fake-instance',
+                 'device_name': '/dev/sda1',
+                 'source_type': 'volume',
+                 'destination_type': 'volume',
+                 'volume_id': 'fake-volume-id-1',
+                 'connection_info': "{'fake': 'connection_info'}",
+                 'boot_index': 0}),
+            BDM({'id': 4, 'instance_uuid': 'fake-instance',
+                 'device_name': '/dev/sda2',
+                 'source_type': 'snapshot',
+                 'destination_type': 'volume',
+                 'connection_info': "{'fake': 'connection_info'}",
+                 'snapshot_id': 'fake-snapshot-id-1',
+                 'volume_id': 'fake-volume-id-2',
+                 'boot_index': -1}),
+            BDM({'id': 5, 'instance_uuid': 'fake-instance',
+                 'no_device': True,
+                 'device_name': '/dev/vdc'}),
+        ]
+
     def test_properties(self):
         root_device0 = '/dev/sda'
         root_device1 = '/dev/sdb'
@@ -141,6 +181,31 @@ class BlockDeviceTestCase(test.NoDBTestCase):
         self.assertIsNone(block_device.get_root_bdm(bdms[2:]))
         self.assertIsNone(block_device.get_root_bdm(bdms[3:]))
         self.assertIsNone(block_device.get_root_bdm([]))
+
+    def test_get_bdm_ephemeral_disk_size(self):
+        size = block_device.get_bdm_ephemeral_disk_size(self.new_mapping)
+        self.assertEqual(10, size)
+
+    def test_get_bdm_swap_list(self):
+        swap_list = block_device.get_bdm_swap_list(self.new_mapping)
+        self.assertEqual(1, len(swap_list))
+        self.assertEqual(1, swap_list[0].get('id'))
+
+    def test_get_bdm_local_disk_num(self):
+        size = block_device.get_bdm_local_disk_num(self.new_mapping)
+        self.assertEqual(2, size)
+
+    def test_new_format_is_swap(self):
+        expected_results = [True, False, False, False, False]
+        for expected, bdm in zip(expected_results, self.new_mapping):
+            res = block_device.new_format_is_swap(bdm)
+            self.assertEqual(expected, res)
+
+    def test_new_format_is_ephemeral(self):
+        expected_results = [False, True, False, False, False]
+        for expected, bdm in zip(expected_results, self.new_mapping):
+            res = block_device.new_format_is_ephemeral(bdm)
+            self.assertEqual(expected, res)
 
 
 class TestBlockDeviceDict(test.NoDBTestCase):
@@ -424,15 +489,15 @@ class TestBlockDeviceDict(test.NoDBTestCase):
             self.assertThat(expected, matchers.IsSubDictOf(legacy))
 
     def test_legacy_mapping_from_object_list(self):
-        bdm1 = block_device_obj.BlockDeviceMapping()
-        bdm1 = block_device_obj.BlockDeviceMapping._from_db_object(
+        bdm1 = objects.BlockDeviceMapping()
+        bdm1 = objects.BlockDeviceMapping._from_db_object(
             None, bdm1, fake_block_device.FakeDbBlockDeviceDict(
                 self.new_mapping[0]))
-        bdm2 = block_device_obj.BlockDeviceMapping()
-        bdm2 = block_device_obj.BlockDeviceMapping._from_db_object(
+        bdm2 = objects.BlockDeviceMapping()
+        bdm2 = objects.BlockDeviceMapping._from_db_object(
             None, bdm2, fake_block_device.FakeDbBlockDeviceDict(
                 self.new_mapping[1]))
-        bdmlist = block_device_obj.BlockDeviceMappingList()
+        bdmlist = objects.BlockDeviceMappingList()
         bdmlist.objects = [bdm1, bdm2]
         block_device.legacy_mapping(bdmlist)
 
@@ -460,8 +525,8 @@ class TestBlockDeviceDict(test.NoDBTestCase):
 
     def test_snapshot_from_object(self):
         for bdm in self.new_mapping[:-1]:
-            obj = block_device_obj.BlockDeviceMapping()
-            obj = block_device_obj.BlockDeviceMapping._from_db_object(
+            obj = objects.BlockDeviceMapping()
+            obj = objects.BlockDeviceMapping._from_db_object(
                    None, obj, fake_block_device.FakeDbBlockDeviceDict(
                        bdm))
             self._test_snapshot_from_bdm(obj)

@@ -450,7 +450,7 @@ class HostManager(object):
             if host_state:
                 host_state.update_from_compute_node(compute)
             else:
-                host_state = self.host_state_cls(host, node, compute)
+                host_state = self.host_state_cls(host, node, compute=compute)
                 self.host_state_map[state_key] = host_state
             host_state.update_service(dict(service.iteritems()))
             seen_nodes.add(state_key)

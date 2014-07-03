@@ -18,7 +18,6 @@
 The VMware API VM utility module to build SOAP object specs.
 """
 
-import collections
 import copy
 import functools
 
@@ -30,6 +29,7 @@ from nova.openstack.common.gettextutils import _
 from nova.openstack.common import log as logging
 from nova.openstack.common import units
 from nova import utils
+from nova.virt.vmwareapi import ds_util
 from nova.virt.vmwareapi import error_util
 from nova.virt.vmwareapi import vim_util
 
@@ -39,8 +39,6 @@ LOG = logging.getLogger(__name__)
 ALL_SUPPORTED_NETWORK_DEVICES = ['VirtualE1000', 'VirtualE1000e',
                                  'VirtualPCNet32', 'VirtualSriovEthernetCard',
                                  'VirtualVmxnet']
-DSRecord = collections.namedtuple(
-    'DSRecord', ['datastore', 'name', 'capacity', 'freespace'])
 
 # A cache for VM references. The key will be the VM name
 # and the value is the VM reference. The VM name is unique. This
@@ -467,16 +465,6 @@ def get_vmdk_create_spec(client_factory, size_in_kb, adapter_type="lsiLogic",
     return create_vmdk_spec
 
 
-def get_rdm_create_spec(client_factory, device, adapter_type="lsiLogic",
-                        disk_type="rdmp"):
-    """Builds the RDM virtual disk create spec."""
-    create_vmdk_spec = client_factory.create('ns0:DeviceBackedVirtualDiskSpec')
-    create_vmdk_spec.adapterType = get_vmdk_adapter_type(adapter_type)
-    create_vmdk_spec.diskType = disk_type
-    create_vmdk_spec.device = device
-    return create_vmdk_spec
-
-
 def create_virtual_cdrom_spec(client_factory,
                               datastore,
                               controller_key,
@@ -610,38 +598,6 @@ def relocate_vm_spec(client_factory, datastore=None, host=None,
     return rel_spec
 
 
-def get_dummy_vm_create_spec(client_factory, name, data_store_name):
-    """Builds the dummy VM create spec."""
-    config_spec = client_factory.create('ns0:VirtualMachineConfigSpec')
-
-    config_spec.name = name
-    config_spec.guestId = "otherGuest"
-
-    vm_file_info = client_factory.create('ns0:VirtualMachineFileInfo')
-    vm_file_info.vmPathName = "[" + data_store_name + "]"
-    config_spec.files = vm_file_info
-
-    tools_info = client_factory.create('ns0:ToolsConfigInfo')
-    tools_info.afterPowerOn = True
-    tools_info.afterResume = True
-    tools_info.beforeGuestStandby = True
-    tools_info.beforeGuestShutdown = True
-    tools_info.beforeGuestReboot = True
-
-    config_spec.tools = tools_info
-    config_spec.numCPUs = 1
-    config_spec.memoryMB = 4
-
-    controller_key = -101
-    controller_spec = create_controller_spec(client_factory, controller_key)
-    disk_spec = create_virtual_disk_spec(client_factory, 1024, controller_key)
-
-    device_config_spec = [controller_spec, disk_spec]
-
-    config_spec.deviceChange = device_config_spec
-    return config_spec
-
-
 def get_machine_id_change_spec(client_factory, machine_id_str):
     """Builds the machine id change config spec."""
     virtual_machine_config_spec = client_factory.create(
@@ -726,13 +682,6 @@ def _get_allocated_vnc_ports(session):
         else:
             break
     return vnc_ports
-
-
-def search_datastore_spec(client_factory, file_name):
-    """Builds the datastore search spec."""
-    search_spec = client_factory.create('ns0:HostDatastoreBrowserSearchSpec')
-    search_spec.matchPattern = [file_name]
-    return search_spec
 
 
 def _get_token(results):
@@ -1016,14 +965,6 @@ def get_stats_from_cluster(session, cluster):
     return stats
 
 
-def get_cluster_ref_from_name(session, cluster_name):
-    """Get reference to the cluster with the name specified."""
-    cls = session._call_method(vim_util, "get_objects",
-                               "ClusterComputeResource", ["name"])
-    return _get_object_from_results(session, cls, cluster_name,
-                                    _get_object_for_value)
-
-
 def get_host_ref(session, cluster=None):
     """Get reference to a host within the cluster specified."""
     if cluster is None:
@@ -1088,20 +1029,20 @@ def _select_datastore(data_stores, best_match, datastore_regex=None):
         if ((ds_type == 'VMFS' or ds_type == 'NFS') and
                 propdict.get('summary.accessible')):
             if datastore_regex is None or datastore_regex.match(ds_name):
-                new_ds = DSRecord(
-                    datastore=obj_content.obj,
+                new_ds = ds_util.Datastore(
+                    ref=obj_content.obj,
                     name=ds_name,
                     capacity=propdict['summary.capacity'],
                     freespace=propdict['summary.freeSpace'])
                 # favor datastores with more free space
-                if new_ds.freespace > best_match.freespace:
+                if (best_match is None or
+                    new_ds.freespace > best_match.freespace):
                     best_match = new_ds
 
     return best_match
 
 
-def get_datastore_ref_and_name(session, cluster=None, host=None,
-                               datastore_regex=None):
+def get_datastore(session, cluster=None, host=None, datastore_regex=None):
     """Get the datastore list and choose the most preferable one."""
     if cluster is None and host is None:
         data_stores = session._call_method(vim_util, "get_objects",
@@ -1129,8 +1070,7 @@ def get_datastore_ref_and_name(session, cluster=None, host=None,
                                 ["summary.type", "summary.name",
                                  "summary.capacity", "summary.freeSpace",
                                  "summary.accessible"])
-    best_match = DSRecord(datastore=None, name=None,
-                          capacity=None, freespace=0)
+    best_match = None
     while data_stores:
         best_match = _select_datastore(data_stores, best_match,
                                        datastore_regex)
@@ -1140,7 +1080,7 @@ def get_datastore_ref_and_name(session, cluster=None, host=None,
         data_stores = session._call_method(vim_util,
                                            "continue_to_get_objects",
                                            token)
-    if best_match.datastore:
+    if best_match:
         return best_match
     if datastore_regex:
         raise exception.DatastoreNotFound(
@@ -1382,13 +1322,13 @@ def get_vmdk_adapter_type(adapter_type):
 
 def create_vm(session, instance, vm_folder, config_spec, res_pool_ref):
     """Create VM on ESX host."""
-    LOG.debug(_("Creating VM on the ESX host"), instance=instance)
+    LOG.debug("Creating VM on the ESX host", instance=instance)
     vm_create_task = session._call_method(
         session._get_vim(),
         "CreateVM_Task", vm_folder,
         config=config_spec, pool=res_pool_ref)
     task_info = session._wait_for_task(vm_create_task)
-    LOG.debug(_("Created VM on the ESX host"), instance=instance)
+    LOG.debug("Created VM on the ESX host", instance=instance)
     return task_info.result
 
 
@@ -1473,15 +1413,15 @@ def clone_vmref_for_instance(session, instance, vm_ref, host_ref, ds_ref,
     clone_spec = clone_vm_spec(client_factory, rel_spec, config=config_spec)
 
     # Clone VM on ESX host
-    LOG.debug(_("Cloning VM for instance %s"), instance['uuid'],
-               instance=instance)
+    LOG.debug("Cloning VM for instance %s", instance['uuid'],
+              instance=instance)
     vm_clone_task = session._call_method(session._get_vim(), "CloneVM_Task",
                                          vm_ref, folder=vmfolder_ref,
                                          name=instance['uuid'],
                                          spec=clone_spec)
     session._wait_for_task(vm_clone_task)
-    LOG.debug(_("Cloned VM for instance %s"), instance['uuid'],
-               instance=instance)
+    LOG.debug("Cloned VM for instance %s", instance['uuid'],
+              instance=instance)
     # Invalidate the cache, so that it is refetched the next time
     vm_ref_cache_delete(instance['uuid'])
 
@@ -1503,13 +1443,13 @@ def disassociate_vmref_from_instance(session, instance, vm_ref=None,
     reconfig_spec = get_vm_extra_config_spec(client_factory, extra_opts)
     reconfig_spec.name = instance['uuid'] + suffix
     reconfig_spec.instanceUuid = ''
-    LOG.debug(_("Disassociating VM from instance %s"), instance['uuid'],
-               instance=instance)
+    LOG.debug("Disassociating VM from instance %s", instance['uuid'],
+              instance=instance)
     reconfig_task = session._call_method(session._get_vim(), "ReconfigVM_Task",
                                          vm_ref, spec=reconfig_spec)
     session._wait_for_task(reconfig_task)
-    LOG.debug(_("Disassociated VM from instance %s"), instance['uuid'],
-               instance=instance)
+    LOG.debug("Disassociated VM from instance %s", instance['uuid'],
+              instance=instance)
     # Invalidate the cache, so that it is refetched the next time
     vm_ref_cache_delete(instance['uuid'])
 
@@ -1535,13 +1475,13 @@ def associate_vmref_for_instance(session, instance, vm_ref=None,
     reconfig_spec = get_vm_extra_config_spec(client_factory, extra_opts)
     reconfig_spec.name = instance['uuid']
     reconfig_spec.instanceUuid = instance['uuid']
-    LOG.debug(_("Associating VM to instance %s"), instance['uuid'],
-               instance=instance)
+    LOG.debug("Associating VM to instance %s", instance['uuid'],
+              instance=instance)
     reconfig_task = session._call_method(session._get_vim(), "ReconfigVM_Task",
                                          vm_ref, spec=reconfig_spec)
     session._wait_for_task(reconfig_task)
-    LOG.debug(_("Associated VM to instance %s"), instance['uuid'],
-               instance=instance)
+    LOG.debug("Associated VM to instance %s", instance['uuid'],
+              instance=instance)
     # Invalidate the cache, so that it is refetched the next time
     vm_ref_cache_delete(instance['uuid'])
 

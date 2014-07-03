@@ -33,6 +33,7 @@ from nova.objects import base as objects_base
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common import importutils
 from nova.openstack.common import log as logging
+from nova.openstack.common import processutils
 from nova.openstack.common import service
 from nova import rpc
 from nova import servicegroup
@@ -170,7 +171,8 @@ class Service(service.Service):
         except exception.NotFound:
             try:
                 self.service_ref = self._create_service_ref(ctxt)
-            except exception.ServiceTopicExists:
+            except (exception.ServiceTopicExists,
+                    exception.ServiceBinaryExists):
                 # NOTE(danms): If we race to create a record with a sibling
                 # worker, don't fail here.
                 self.service_ref = self.conductor_api.service_get_by_args(ctxt,
@@ -181,7 +183,7 @@ class Service(service.Service):
         if self.backdoor_port is not None:
             self.manager.backdoor_port = self.backdoor_port
 
-        LOG.debug(_("Creating RPC server for service %s") % self.topic)
+        LOG.debug("Creating RPC server for service %s", self.topic)
 
         target = messaging.Target(topic=self.topic, server=self.host)
 
@@ -198,8 +200,8 @@ class Service(service.Service):
 
         self.manager.post_start_hook()
 
-        LOG.debug(_("Join ServiceGroup membership for this service %s")
-                  % self.topic)
+        LOG.debug("Join ServiceGroup membership for this service %s",
+                  self.topic)
         # Add service to the ServiceGroup membership group.
         self.servicegroup_api.join(self.host, self.topic, self)
 
@@ -332,7 +334,7 @@ class WSGIService(object):
         self.host = getattr(CONF, '%s_listen' % name, "0.0.0.0")
         self.port = getattr(CONF, '%s_listen_port' % name, 0)
         self.workers = (getattr(CONF, '%s_workers' % name, None) or
-                        utils.cpu_count())
+                        processutils.get_worker_count())
         if self.workers and self.workers < 1:
             worker_name = '%s_workers' % name
             msg = (_("%(worker_name)s value of %(workers)s is invalid, "

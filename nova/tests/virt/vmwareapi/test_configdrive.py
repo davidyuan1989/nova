@@ -118,9 +118,10 @@ class ConfigDriveTestCase(test.NoDBTestCase):
         vmwareapi_fake.cleanup()
         nova.tests.image.fake.FakeImageService_reset()
 
-    def _spawn_vm(self, injected_files=[], admin_password=None,
+    def _spawn_vm(self, injected_files=None, admin_password=None,
                   block_device_info=None):
 
+        injected_files = injected_files or []
         read_file_handle = mock.MagicMock()
         write_file_handle = mock.MagicMock()
         self.image_ref = self.instance['image_ref']
@@ -169,7 +170,8 @@ class ConfigDriveTestCase(test.NoDBTestCase):
                                                mox.IgnoreArg(),
                                                mox.IgnoreArg(),
                                                mox.IgnoreArg(),
-                                               mox.IgnoreArg())
+                                               mox.IgnoreArg()
+                                               ).AndReturn('[ds1] fake.iso')
         self.conn._vmops._attach_cdrom_to_vm(mox.IgnoreArg(),
                                                mox.IgnoreArg(),
                                                mox.IgnoreArg(),

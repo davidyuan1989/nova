@@ -20,6 +20,7 @@ import base64
 import hashlib
 import hmac
 import json
+import mock
 import re
 
 try:
@@ -41,7 +42,7 @@ from nova import db
 from nova.db.sqlalchemy import api
 from nova import exception
 from nova.network import api as network_api
-from nova.objects import instance as instance_obj
+from nova import objects
 from nova import test
 from nova.tests import fake_block_device
 from nova.tests import fake_instance
@@ -80,8 +81,8 @@ INSTANCE = fake_instance.fake_db_instance(**
 
 
 def fake_inst_obj(context):
-    return instance_obj.Instance._from_db_object(
-        context, instance_obj.Instance(), INSTANCE,
+    return objects.Instance._from_db_object(
+        context, objects.Instance(), INSTANCE,
         expected_attrs=['metadata', 'system_metadata',
                         'info_cache'])
 
@@ -96,9 +97,10 @@ def return_non_existing_address(*args, **kwarg):
 
 
 def fake_InstanceMetadata(stubs, inst_data, address=None,
-                          sgroups=None, content=[], extra_md={},
+                          sgroups=None, content=None, extra_md=None,
                           vd_driver=None, network_info=None):
-
+    content = content or []
+    extra_md = extra_md or {}
     if sgroups is None:
         sgroups = [dict(test_security_group.fake_secgroup,
                         name='default')]
@@ -191,12 +193,12 @@ class MetadataTestCase(test.TestCase):
     def test_format_instance_mapping(self):
         # Make sure that _format_instance_mappings works.
         ctxt = None
-        instance_ref0 = instance_obj.Instance(**{'id': 0,
+        instance_ref0 = objects.Instance(**{'id': 0,
                          'uuid': 'e5fe5518-0288-4fa3-b0c4-c79764101b85',
                          'root_device_name': None,
                          'default_ephemeral_device': None,
                          'default_swap_device': None})
-        instance_ref1 = instance_obj.Instance(**{'id': 0,
+        instance_ref1 = objects.Instance(**{'id': 0,
                          'uuid': 'b65cee2f-8c69-4aeb-be2f-f79742548fc2',
                          'root_device_name': '/dev/sda1',
                          'default_ephemeral_device': None,
@@ -794,21 +796,18 @@ class MetadataPasswordTestCase(test.TestCase):
         self.assertRaises(webob.exc.HTTPBadRequest,
                           password.handle_password, request, self.mdinst)
 
-    def _try_set_password(self, val='bar'):
+    @mock.patch('nova.objects.Instance.get_by_uuid')
+    def _try_set_password(self, get_by_uuid, val='bar'):
         request = webob.Request.blank('')
         request.method = 'POST'
         request.body = val
-        self.stubs.Set(db, 'instance_get_by_uuid',
-                       lambda *a, **kw: {'system_metadata': []})
+        get_by_uuid.return_value = self.instance
 
-        def fake_instance_update(context, uuid, updates):
-            self.assertIn('system_metadata', updates)
-            self.assertIn('password_0', updates['system_metadata'])
-            return self.instance, self.instance
+        with mock.patch.object(self.instance, 'save') as save:
+            password.handle_password(request, self.mdinst)
+            save.assert_called_once_with()
 
-        self.stubs.Set(db, 'instance_update_and_get_original',
-                       fake_instance_update)
-        password.handle_password(request, self.mdinst)
+        self.assertIn('password_0', self.instance.system_metadata)
 
     def test_set_password(self):
         self.mdinst.password = ''
@@ -823,4 +822,4 @@ class MetadataPasswordTestCase(test.TestCase):
         self.mdinst.password = ''
         self.assertRaises(webob.exc.HTTPBadRequest,
                           self._try_set_password,
-                          'a' * (password.MAX_SIZE + 1))
+                          val=('a' * (password.MAX_SIZE + 1)))

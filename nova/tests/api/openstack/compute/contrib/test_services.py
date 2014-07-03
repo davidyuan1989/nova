@@ -61,7 +61,7 @@ fake_services_list = [
          topic='scheduler',
          updated_at=datetime.datetime(2012, 9, 19, 6, 55, 34),
          created_at=datetime.datetime(2012, 9, 18, 2, 46, 28),
-         disabled_reason=''),
+         disabled_reason=None),
     dict(test_service.fake_service,
          binary='nova-compute',
          host='host2',
@@ -278,7 +278,7 @@ class ServicesTest(test.TestCase):
                      'status': 'enabled',
                      'state': 'down',
                      'updated_at': datetime.datetime(2012, 9, 19, 6, 55, 34),
-                     'disabled_reason': ''},
+                     'disabled_reason': None},
                     {'binary': 'nova-compute',
                      'host': 'host2',
                      'zone': 'nova',
@@ -382,7 +382,7 @@ class ServicesTest(test.TestCase):
     def test_services_enable(self):
         def _service_update(context, service_id, values):
             self.assertIsNone(values['disabled_reason'])
-            return dict(test_service.fake_service, **values)
+            return dict(test_service.fake_service, id=service_id, **values)
 
         self.stubs.Set(db, "service_update", _service_update)
 

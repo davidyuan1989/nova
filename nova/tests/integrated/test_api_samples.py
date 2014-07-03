@@ -37,13 +37,14 @@ from nova.cloudpipe import pipelib
 from nova.compute import api as compute_api
 from nova.compute import cells_api as cells_api
 from nova.compute import manager as compute_manager
+from nova.compute import rpcapi as compute_rpcapi
 from nova.conductor import manager as conductor_manager
 from nova import context
 from nova import db
 from nova.db.sqlalchemy import models
 from nova import exception
 from nova.network import api as network_api
-from nova.objects import block_device as block_device_obj
+from nova import objects
 from nova.openstack.common import importutils
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
@@ -64,6 +65,7 @@ from nova.tests import fake_utils
 from nova.tests.image import fake
 from nova.tests.integrated import api_samples_test_base
 from nova.tests.integrated import integrated_helpers
+from nova.tests.objects import test_network
 from nova.tests import utils as test_utils
 from nova.tests.virt.baremetal.db import base as bm_db_base
 from nova import utils
@@ -477,7 +479,8 @@ class LimitsSampleXmlTest(LimitsSampleJsonTest):
 
 class ServersActionsJsonTest(ServersSampleBase):
     def _test_server_action(self, uuid, action,
-                            subs={}, resp_tpl=None, code=202):
+                            subs=None, resp_tpl=None, code=202):
+        subs = subs or {}
         subs.update({'action': action})
         response = self._do_post('servers/%s/action' % uuid,
                                  'server-action-%s' % action.lower(),
@@ -1365,10 +1368,10 @@ class AgentsJsonTest(ApiSampleTestBaseV2):
                              'os': 'os',
                              'version': '8.0',
                              'md5hash': 'add6bb58e139be103324d04d82d8f545',
-                             'id': '1'}]
+                             'id': 1}]
 
         def fake_agent_build_create(context, values):
-            values['id'] = '1'
+            values['id'] = 1
             agent_build_ref = models.AgentBuild()
             agent_build_ref.update(values)
             return agent_build_ref
@@ -1459,6 +1462,8 @@ class FixedIpJsonTest(ApiSampleTestBaseV2):
     def setUp(self):
         super(FixedIpJsonTest, self).setUp()
 
+        instance = dict(test_utils.get_test_instance(),
+                        hostname='openstack', host='host')
         fake_fixed_ips = [{'id': 1,
                    'address': '192.168.1.1',
                    'network_id': 1,
@@ -1467,6 +1472,12 @@ class FixedIpJsonTest(ApiSampleTestBaseV2):
                    'allocated': False,
                    'leased': False,
                    'reserved': False,
+                   'created_at': None,
+                   'deleted_at': None,
+                   'updated_at': None,
+                   'deleted': None,
+                   'instance': instance,
+                   'network': test_network.fake_network,
                    'host': None},
                   {'id': 2,
                    'address': '192.168.1.2',
@@ -1476,10 +1487,17 @@ class FixedIpJsonTest(ApiSampleTestBaseV2):
                    'allocated': False,
                    'leased': False,
                    'reserved': False,
+                   'created_at': None,
+                   'deleted_at': None,
+                   'updated_at': None,
+                   'deleted': None,
+                   'instance': instance,
+                   'network': test_network.fake_network,
                    'host': None},
                   ]
 
-        def fake_fixed_ip_get_by_address(context, address):
+        def fake_fixed_ip_get_by_address(context, address,
+                                         columns_to_join=None):
             for fixed_ip in fake_fixed_ips:
                 if fixed_ip['address'] == address:
                     return fixed_ip
@@ -2709,6 +2727,31 @@ class FlavorDisabledSampleXmlTests(FlavorDisabledSampleJsonTests):
     ctype = "xml"
 
 
+class QuotaClassesSampleJsonTests(ApiSampleTestBaseV2):
+    extension_name = ("nova.api.openstack.compute.contrib.quota_classes."
+                      "Quota_classes")
+    set_id = 'test_class'
+
+    def test_show_quota_classes(self):
+        # Get api sample to show quota classes.
+        response = self._do_get('os-quota-class-sets/%s' % self.set_id)
+        subs = {'set_id': self.set_id}
+        self._verify_response('quota-classes-show-get-resp', subs,
+                              response, 200)
+
+    def test_update_quota_classes(self):
+        # Get api sample to update quota classes.
+        response = self._do_put('os-quota-class-sets/%s' % self.set_id,
+                                'quota-classes-update-post-req',
+                                {})
+        self._verify_response('quota-classes-update-post-resp',
+                              {}, response, 200)
+
+
+class QuotaClassesSampleXmlTests(QuotaClassesSampleJsonTests):
+    ctype = "xml"
+
+
 class CellsSampleJsonTest(ApiSampleTestBaseV2):
     extension_name = "nova.api.openstack.compute.contrib.cells.Cells"
 
@@ -3151,7 +3194,7 @@ class EvacuateJsonTest(ServersSampleBase):
         uuid = self._post_server()
 
         req_subs = {
-            'host': self.compute.host,
+            'host': 'testHost',
             "adminPass": "MySecretPass",
             "onSharedStorage": 'False'
         }
@@ -3168,17 +3211,21 @@ class EvacuateJsonTest(ServersSampleBase):
                     'zone': 'nova'
                     }
 
-        def fake_check_instance_exists(self, context, instance):
-            """Simulate validation of instance does not exist."""
-            return False
+        def fake_rebuild_instance(self, ctxt, instance, new_pass,
+                                  injected_files, image_ref, orig_image_ref,
+                                  orig_sys_metadata, bdms, recreate=False,
+                                  on_shared_storage=False, host=None,
+                                  preserve_ephemeral=False, kwargs=None):
+            return {
+                    'adminPass': new_pass
+                    }
 
         self.stubs.Set(service_group_api.API, 'service_is_up',
                        fake_service_is_up)
         self.stubs.Set(compute_api.HostAPI, 'service_get_by_compute_host',
                        fake_service_get_by_compute_host)
-        self.stubs.Set(compute_manager.ComputeManager,
-                      '_check_instance_exists',
-                      fake_check_instance_exists)
+        self.stubs.Set(compute_rpcapi.ComputeAPI, 'rebuild_instance',
+                       fake_rebuild_instance)
 
         response = self._do_post('servers/%s/action' % uuid,
                                  'server-evacuate-req', req_subs)
@@ -3657,9 +3704,9 @@ class AttachInterfacesSampleJsonTest(ServersSampleBase):
                        fake_attach_interface)
         self.stubs.Set(compute_api.API, 'detach_interface',
                        fake_detach_interface)
-        self.flags(neutron_auth_strategy=None)
-        self.flags(neutron_url='http://anyhost/')
-        self.flags(neutron_url_timeout=30)
+        self.flags(auth_strategy=None, group='neutron')
+        self.flags(url='http://anyhost/', group='neutron')
+        self.flags(url_timeout=30, group='neutron')
 
     def generalize_subs(self, subs, vanilla_regexes):
         subs['subnet_id'] = vanilla_regexes['uuid']
@@ -3889,7 +3936,7 @@ class VolumeAttachmentsSampleJsonTest(VolumeAttachmentsSampleBase):
         self.stubs.Set(compute_manager.ComputeManager,
                        'attach_volume',
                        lambda *a, **k: None)
-        self.stubs.Set(block_device_obj.BlockDeviceMapping, 'get_by_volume_id',
+        self.stubs.Set(objects.BlockDeviceMapping, 'get_by_volume_id',
                        classmethod(lambda *a, **k: None))
 
         volume = fakes.stub_volume_get(None, context.get_admin_context(),
@@ -4148,7 +4195,8 @@ class PreserveEphemeralOnRebuildJsonTest(ServersSampleBase):
                       'Preserve_ephemeral_rebuild')
 
     def _test_server_action(self, uuid, action,
-                            subs={}, resp_tpl=None, code=202):
+                            subs=None, resp_tpl=None, code=202):
+        subs = subs or {}
         subs.update({'action': action})
         response = self._do_post('servers/%s/action' % uuid,
                                  'server-action-%s' % action.lower(),

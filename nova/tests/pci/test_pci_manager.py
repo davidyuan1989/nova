@@ -20,8 +20,9 @@ from nova.compute import vm_states
 from nova import context
 from nova import db
 from nova import exception
-from nova.objects import instance
-from nova.objects import pci_device
+from nova import objects
+from nova.objects import pci_device as pci_device_obj
+from nova.pci import pci_device
 from nova.pci import pci_manager
 from nova.pci import pci_request
 from nova import test
@@ -72,9 +73,9 @@ fake_pci_requests = [
 
 class PciDevTrackerTestCase(test.TestCase):
     def _create_fake_instance(self):
-        self.inst = instance.Instance()
+        self.inst = objects.Instance()
         self.inst.uuid = 'fake-inst-uuid'
-        self.inst.pci_devices = pci_device.PciDeviceList()
+        self.inst.pci_devices = pci_device_obj.PciDeviceList()
         self.inst.vm_state = vm_states.ACTIVE
         self.inst.task_state = None
 
@@ -246,7 +247,7 @@ class PciDevTrackerTestCase(test.TestCase):
         self.assertEqual(len(self.tracker.pci_devs), 3)
         dev = self.tracker.pci_devs[0]
         self.update_called = 0
-        dev.remove()
+        pci_device.remove(dev)
         self.tracker.save(ctxt)
         self.assertEqual(len(self.tracker.pci_devs), 2)
         self.assertEqual(self.destroy_called, 1)
@@ -333,7 +334,7 @@ class PciGetInstanceDevs(test.TestCase):
         def _fake_obj_load_attr(foo, attrname):
             if attrname == 'pci_devices':
                 self.load_attr_called = True
-                foo.pci_devices = pci_device.PciDeviceList()
+                foo.pci_devices = pci_device_obj.PciDeviceList()
 
         inst = fakes.stub_instance(id='1')
         ctxt = context.get_admin_context()
@@ -341,9 +342,8 @@ class PciGetInstanceDevs(test.TestCase):
         db.instance_get(ctxt, '1', columns_to_join=[]
                         ).AndReturn(inst)
         self.mox.ReplayAll()
-        inst = instance.Instance.get_by_id(ctxt, '1', expected_attrs=[])
-        self.stubs.Set(instance.Instance, 'obj_load_attr',
-            _fake_obj_load_attr)
+        inst = objects.Instance.get_by_id(ctxt, '1', expected_attrs=[])
+        self.stubs.Set(objects.Instance, 'obj_load_attr', _fake_obj_load_attr)
 
         self.load_attr_called = False
         pci_manager.get_instance_pci_devs(inst)

@@ -68,10 +68,19 @@ def make_class_properties(cls):
             return getattr(self, attrname)
 
         def setter(self, value, name=name, field=field):
+            attrname = get_attrname(name)
+            field_value = field.coerce(self, name, value)
+            if field.read_only and hasattr(self, attrname):
+                # Note(yjiang5): _from_db_object() may iterate
+                # every field and write, no exception in such situation.
+                if getattr(self, attrname) != field_value:
+                    raise exception.ReadOnlyFieldError(field=name)
+                else:
+                    return
+
             self._changed_fields.add(name)
             try:
-                return setattr(self, get_attrname(name),
-                               field.coerce(self, name, value))
+                return setattr(self, attrname, field_value)
             except Exception:
                 attr = "%s.%s" % (self.obj_name(), name)
                 LOG.exception(_('Error setting %(attr)s') %
@@ -134,8 +143,6 @@ class NovaObjectMetaclass(type):
 # requested action and the result will be returned here.
 def remotable_classmethod(fn):
     """Decorator for remotable classmethods."""
-    fn.remotable = True
-
     @functools.wraps(fn)
     def wrapper(cls, context, *args, **kwargs):
         if NovaObject.indirection_api:
@@ -147,6 +154,10 @@ def remotable_classmethod(fn):
             if isinstance(result, NovaObject):
                 result._context = context
         return result
+
+    # NOTE(danms): Make this discoverable
+    wrapper.remotable = True
+    wrapper.original_fn = fn
     return classmethod(wrapper)
 
 
@@ -157,8 +168,6 @@ def remotable_classmethod(fn):
 # "orphaned" and remotable methods cannot be called.
 def remotable(fn):
     """Decorator for remotable object methods."""
-    fn.remotable = True
-
     @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
         ctxt = self._context
@@ -185,6 +194,9 @@ def remotable(fn):
             return result
         else:
             return fn(self, ctxt, *args, **kwargs)
+
+    wrapper.remotable = True
+    wrapper.original_fn = fn
     return wrapper
 
 
@@ -220,6 +232,15 @@ class NovaObject(object):
         self._context = context
         for key in kwargs.keys():
             self[key] = kwargs[key]
+
+    def __repr__(self):
+        return '%s(%s)' % (
+            self.obj_name(),
+            ','.join(['%s=%s' % (name,
+                                 (self.obj_attr_is_set(name) and
+                                  field.stringify(getattr(self, name)) or
+                                  '<?>'))
+                      for name, field in sorted(self.fields.items())]))
 
     @classmethod
     def obj_name(cls):
@@ -492,6 +513,12 @@ class ObjectListBase(object):
     # we can support backleveling our contents based on the version
     # requested of the list object.
     child_versions = {}
+
+    def __init__(self, *args, **kwargs):
+        super(ObjectListBase, self).__init__(*args, **kwargs)
+        if 'objects' not in kwargs:
+            self.objects = []
+            self._changed_fields.discard('objects')
 
     def __iter__(self):
         """List iterator interface."""

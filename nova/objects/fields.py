@@ -94,6 +94,11 @@ class AbstractFieldType(six.with_metaclass(abc.ABCMeta, object)):
         """Returns a string describing the type of the field."""
         pass
 
+    @abc.abstractmethod
+    def stringify(self, value):
+        """Returns a short stringified version of a value."""
+        pass
+
 
 class FieldType(AbstractFieldType):
     @staticmethod
@@ -111,16 +116,21 @@ class FieldType(AbstractFieldType):
     def describe(self):
         return self.__class__.__name__
 
+    def stringify(self, value):
+        return str(value)
+
 
 class UnspecifiedDefault(object):
     pass
 
 
 class Field(object):
-    def __init__(self, field_type, nullable=False, default=UnspecifiedDefault):
+    def __init__(self, field_type, nullable=False,
+                 default=UnspecifiedDefault, read_only=False):
         self._type = field_type
         self._nullable = nullable
         self._default = default
+        self._read_only = read_only
 
     def __repr__(self):
         args = {
@@ -138,6 +148,10 @@ class Field(object):
     @property
     def default(self):
         return self._default
+
+    @property
+    def read_only(self):
+        return self._read_only
 
     def _null(self, obj, attr):
         if self.nullable:
@@ -214,6 +228,12 @@ class Field(object):
         prefix = self.nullable and 'Nullable' or ''
         return prefix + name
 
+    def stringify(self, value):
+        if value is None:
+            return 'None'
+        else:
+            return self._type.stringify(value)
+
 
 class String(FieldType):
     @staticmethod
@@ -225,6 +245,10 @@ class String(FieldType):
         else:
             raise ValueError(_('A string is required here, not %s') %
                              value.__class__.__name__)
+
+    @staticmethod
+    def stringify(value):
+        return '\'%s\'' % value
 
 
 class UUID(FieldType):
@@ -273,6 +297,10 @@ class DateTime(FieldType):
 
     @staticmethod
     def to_primitive(obj, attr, value):
+        return timeutils.isotime(value)
+
+    @staticmethod
+    def stringify(value):
         return timeutils.isotime(value)
 
 
@@ -366,6 +394,10 @@ class List(CompoundFieldType):
     def from_primitive(self, obj, attr, value):
         return [self._element_type.from_primitive(obj, attr, x) for x in value]
 
+    def stringify(self, value):
+        return '[%s]' % (
+            ','.join([self._element_type.stringify(x) for x in value]))
+
 
 class Dict(CompoundFieldType):
     def coerce(self, obj, attr, value):
@@ -395,6 +427,11 @@ class Dict(CompoundFieldType):
             concrete[key] = self._element_type.from_primitive(
                 obj, '%s["%s"]' % (attr, key), element)
         return concrete
+
+    def stringify(self, value):
+        return '{%s}' % (
+            ','.join(['%s=%s' % (key, self._element_type.stringify(val))
+                      for key, val in sorted(value.items())]))
 
 
 class Object(FieldType):
@@ -426,6 +463,18 @@ class Object(FieldType):
     def describe(self):
         return "Object<%s>" % self._obj_name
 
+    def stringify(self, value):
+        if 'uuid' in value.fields:
+            ident = '(%s)' % (value.obj_attr_is_set('uuid') and value.uuid or
+                              'UNKNOWN')
+        elif 'id' in value.fields:
+            ident = '(%s)' % (value.obj_attr_is_set('id') and value.id or
+                              'UNKNOWN')
+        else:
+            ident = ''
+
+        return '%s%s' % (self._obj_name, ident)
+
 
 class NetworkModel(FieldType):
     @staticmethod
@@ -445,6 +494,10 @@ class NetworkModel(FieldType):
     @staticmethod
     def from_primitive(obj, attr, value):
         return network_model.NetworkInfo.hydrate(value)
+
+    def stringify(self, value):
+        return 'NetworkModel(%s)' % (
+            ','.join([str(vif['id']) for vif in value]))
 
 
 class AutoTypedField(Field):

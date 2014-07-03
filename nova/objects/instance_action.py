@@ -14,7 +14,10 @@
 
 import traceback
 
+import six
+
 from nova import db
+from nova import objects
 from nova.objects import base
 from nova.objects import fields
 from nova.openstack.common import timeutils
@@ -115,7 +118,7 @@ def serialize_args(fn):
         exc_tb = kwargs.get('exc_tb')
         if exc_val is not None:
             kwargs['exc_val'] = str(exc_val)
-        if not isinstance(exc_tb, str) and exc_tb is not None:
+        if not isinstance(exc_tb, six.string_types) and exc_tb is not None:
             kwargs['exc_tb'] = ''.join(traceback.format_tb(exc_tb))
         # NOTE(danms): We wrap a descriptor, so use that protocol
         return fn.__get__(None, cls)(*args, **kwargs)
@@ -224,5 +227,5 @@ class InstanceActionEventList(base.ObjectListBase, base.NovaObject):
     @base.remotable_classmethod
     def get_by_action(cls, context, action_id):
         db_events = db.action_events_get(context, action_id)
-        return base.obj_make_list(context, cls(), InstanceActionEvent,
-                                  db_events)
+        return base.obj_make_list(context, cls(context),
+                                  objects.InstanceActionEvent, db_events)

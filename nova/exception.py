@@ -123,7 +123,7 @@ class NovaException(Exception):
                 # log the issue and the kwargs
                 LOG.exception(_('Exception in string format operation'))
                 for name, value in kwargs.iteritems():
-                    LOG.error("%s: %s" % (name, value))
+                    LOG.error("%s: %s" % (name, value))    # noqa
 
                 if CONF.fatal_exception_format_errors:
                     raise exc_info[0], exc_info[1], exc_info[2]
@@ -145,6 +145,10 @@ class EncryptionFailure(NovaException):
 
 class DecryptionFailure(NovaException):
     msg_fmt = _("Failed to decrypt text: %(reason)s")
+
+
+class RevokeCertFailure(NovaException):
+    msg_fmt = _("Failed to revoke certificate for %(project_id)s")
 
 
 class VirtualInterfaceCreateException(NovaException):
@@ -246,6 +250,10 @@ class InvalidBDMForLegacy(InvalidBDM):
                 "be converted to legacy format. ")
 
 
+class InvalidBDMVolumeNotBootable(InvalidBDM):
+    msg_fmt = _("Block Device %(id)s is not bootable.")
+
+
 class InvalidAttribute(Invalid):
     msg_fmt = _("Attribute not supported: %(attr)s")
 
@@ -335,6 +343,10 @@ class InvalidGroup(Invalid):
 
 class InvalidSortKey(Invalid):
     msg_fmt = _("Sort key supplied was not valid.")
+
+
+class InvalidStrTime(Invalid):
+    msg_fmt = _("Invalid datetime string: %(reason)s")
 
 
 class InstanceInvalidState(Invalid):
@@ -515,7 +527,7 @@ class AgentBuildExists(NovaException):
 
 
 class VolumeNotFound(NotFound):
-    ec2_code = 'InvalidVolumeID.NotFound'
+    ec2_code = 'InvalidVolume.NotFound'
     msg_fmt = _("Volume %(volume_id)s could not be found.")
 
 
@@ -524,7 +536,7 @@ class VolumeBDMNotFound(NotFound):
 
 
 class SnapshotNotFound(NotFound):
-    ec2_code = 'InvalidSnapshotID.NotFound'
+    ec2_code = 'InvalidSnapshot.NotFound'
     msg_fmt = _("Snapshot %(snapshot_id)s could not be found.")
 
 
@@ -1385,6 +1397,10 @@ class IncompatibleObjectVersion(NovaException):
     msg_fmt = _('Version %(objver)s of %(objname)s is not supported')
 
 
+class ReadOnlyFieldError(NovaException):
+    msg_fmt = _('Cannot modify readonly field %(field)s')
+
+
 class ObjectActionError(NovaException):
     msg_fmt = _('Object action %(action)s failed because: %(reason)s')
 
@@ -1567,3 +1583,18 @@ class NoBlockMigrationForConfigDriveInLibVirt(NovaException):
 
 class UnshelveException(NovaException):
     msg_fmt = _("Error during unshelve instance %(instance_id)s: %(reason)s")
+
+
+class ImageVCPULimitsRangeExceeded(Invalid):
+    msg_fmt = _("Image vCPU limits %(sockets)d:%(cores)d:%(threads)d "
+                "exceeds permitted %(maxsockets)d:%(maxcores)d:%(maxthreads)d")
+
+
+class ImageVCPUTopologyRangeExceeded(Invalid):
+    msg_fmt = _("Image vCPU topology %(sockets)d:%(cores)d:%(threads)d "
+                "exceeds permitted %(maxsockets)d:%(maxcores)d:%(maxthreads)d")
+
+
+class ImageVCPULimitsRangeImpossible(Invalid):
+    msg_fmt = _("Requested vCPU limits %(sockets)d:%(cores)d:%(threads)d "
+                "are impossible to satisfy for vcpus count %(vcpus)d")

@@ -21,6 +21,7 @@ from nova import compute
 from nova import context
 from nova import db
 from nova import exception
+from nova import objects
 from nova.objects import instance as instance_obj
 from nova.openstack.common import jsonutils
 from nova import test
@@ -47,7 +48,7 @@ def fake_compute_get_all(*args, **kwargs):
     db_list = [fakes.stub_instance(1), fakes.stub_instance(2)]
     fields = instance_obj.INSTANCE_DEFAULT_FIELDS
     return instance_obj._make_instance_list(args[1],
-                                            instance_obj.InstanceList(),
+                                            objects.InstanceList(),
                                             db_list, fields)
 
 
@@ -230,7 +231,7 @@ class ExtendedVolumesTest(test.TestCase):
         res = self._make_request(url, {"detach": None})
         self.assertEqual(res.status_int, 400)
 
-    @mock.patch('nova.objects.block_device.BlockDeviceMapping.is_root',
+    @mock.patch('nova.objects.BlockDeviceMapping.is_root',
                  new_callable=mock.PropertyMock)
     def test_detach_volume_root(self, mock_isroot):
         url = "/v3/servers/%s/action" % UUID1

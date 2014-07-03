@@ -783,10 +783,12 @@ def floating_ip_allocate_address(context, project_id, pool,
 @require_context
 def floating_ip_bulk_create(context, ips):
     session = get_session()
+    result = []
     with session.begin():
         for ip in ips:
             model = models.FloatingIp()
             model.update(ip)
+            result.append(model)
             try:
                 # NOTE(boris-42): To get existing address we have to do each
                 #                  time session.flush()..
@@ -794,6 +796,7 @@ def floating_ip_bulk_create(context, ips):
                 session.flush()
             except db_exc.DBDuplicateEntry:
                 raise exception.FloatingIpExists(address=ip['address'])
+    return result
 
 
 def _ip_range_splitter(ips, block_size=256):
@@ -2603,12 +2606,10 @@ def network_get_all_by_uuids(context, network_uuids, project_only):
     #check if the result contains all the networks
     #we are looking for
     for network_uuid in network_uuids:
-        found = False
         for network in result:
             if network['uuid'] == network_uuid:
-                found = True
                 break
-        if not found:
+        else:
             if project_only:
                 raise exception.NetworkNotFoundForProject(
                       network_uuid=network_uuid, project_id=context.project_id)
@@ -2894,6 +2895,8 @@ def quota_class_get_default(context):
 
 @require_context
 def quota_class_get_all_by_name(context, class_name):
+    nova.context.authorize_quota_class_context(context, class_name)
+
     rows = model_query(context, models.QuotaClass, read_deleted="no").\
                    filter_by(class_name=class_name).\
                    all()

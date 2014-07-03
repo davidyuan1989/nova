@@ -147,6 +147,8 @@ class ConductorAPI(object):
     ...  - Remove instance_get_active_by_window_joined()
     ...  - Remove instance_fault_create()
     ...  - Remove action_event_start() and action_event_finish()
+    ...  - Remove instance_get_by_uuid()
+    ...  - Remove agent_build_get_by_triple()
     """
 
     VERSION_ALIASES = {
@@ -173,13 +175,6 @@ class ConductorAPI(object):
                           instance_uuid=instance_uuid,
                           updates=updates_p,
                           service=service)
-
-    def instance_get_by_uuid(self, context, instance_uuid,
-                             columns_to_join=None):
-        kwargs = {'instance_uuid': instance_uuid,
-                  'columns_to_join': columns_to_join}
-        cctxt = self.client.prepare()
-        return cctxt.call(context, 'instance_get_by_uuid', **kwargs)
 
     def migration_get_in_progress_by_host_and_node(self, context,
                                                    host, node):
@@ -210,12 +205,6 @@ class ConductorAPI(object):
     def provider_fw_rule_get_all(self, context):
         cctxt = self.client.prepare()
         return cctxt.call(context, 'provider_fw_rule_get_all')
-
-    def agent_build_get_by_triple(self, context, hypervisor, os, architecture):
-        cctxt = self.client.prepare()
-        return cctxt.call(context, 'agent_build_get_by_triple',
-                          hypervisor=hypervisor, os=os,
-                          architecture=architecture)
 
     def block_device_mapping_update_or_create(self, context, values,
                                               create=None):
@@ -377,6 +366,7 @@ class ComputeTaskAPI(object):
     1.4 - Added reservations to migrate_server.
     1.5 - Added the leagacy_bdm parameter to build_instances
     1.6 - Made migrate_server use instance objects
+    1.7 - Do not send block_device_mapping and legacy_bdm to build_instances
     """
 
     def __init__(self):
@@ -409,16 +399,21 @@ class ComputeTaskAPI(object):
             admin_password, injected_files, requested_networks,
             security_groups, block_device_mapping, legacy_bdm=True):
         image_p = jsonutils.to_primitive(image)
-        cctxt = self.client.prepare(version='1.5')
-        cctxt.cast(context, 'build_instances',
-                   instances=instances, image=image_p,
-                   filter_properties=filter_properties,
-                   admin_password=admin_password,
-                   injected_files=injected_files,
-                   requested_networks=requested_networks,
-                   security_groups=security_groups,
-                   block_device_mapping=block_device_mapping,
-                   legacy_bdm=legacy_bdm)
+        kw = {'instances': instances, 'image': image_p,
+               'filter_properties': filter_properties,
+               'admin_password': admin_password,
+               'injected_files': injected_files,
+               'requested_networks': requested_networks,
+               'security_groups': security_groups}
+
+        if self.client.can_send_version('1.7'):
+            version = '1.7'
+        else:
+            version = '1.5'
+            kw.update({'block_device_mapping': block_device_mapping,
+                       'legacy_bdm': legacy_bdm})
+        cctxt = self.client.prepare(version=version)
+        cctxt.cast(context, 'build_instances', **kw)
 
     def unshelve_instance(self, context, instance):
         cctxt = self.client.prepare(version='1.3')

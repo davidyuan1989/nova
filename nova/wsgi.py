@@ -237,6 +237,7 @@ class Server(object):
         """
         try:
             if self._server is not None:
+                self._pool.waitall()
                 self._server.wait()
         except greenlet.GreenletExit:
             LOG.info(_("WSGI server has stopped."))
@@ -497,7 +498,7 @@ class Loader(object):
 
         """
         try:
-            LOG.debug(_("Loading app %(name)s from %(path)s") %
+            LOG.debug("Loading app %(name)s from %(path)s",
                       {'name': name, 'path': self.config_path})
             return deploy.loadapp("config:%s" % self.config_path, name=name)
         except LookupError as err:

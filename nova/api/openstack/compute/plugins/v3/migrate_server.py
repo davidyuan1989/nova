@@ -106,6 +106,8 @@ class MigrateServerController(wsgi.Controller):
                 exception.InstanceNotRunning,
                 exception.MigrationPreCheckError) as ex:
             raise exc.HTTPBadRequest(explanation=ex.format_message())
+        except exception.InstanceIsLocked as e:
+            raise exc.HTTPConflict(explanation=e.format_message())
         except exception.InstanceInvalidState as state_error:
             common.raise_http_conflict_for_instance_invalid_state(state_error,
                     'migrate_live')
@@ -117,7 +119,6 @@ class MigrateServer(extensions.V3APIExtensionBase):
 
     name = "MigrateServer"
     alias = ALIAS
-    namespace = "http://docs.openstack.org/compute/ext/%s/api/v3" % ALIAS
     version = 1
 
     def get_controller_extensions(self):

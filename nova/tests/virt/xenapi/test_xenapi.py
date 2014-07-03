@@ -330,8 +330,8 @@ class XenAPIVMTestCase(stubs.XenAPITestBase):
         vm_utils.lookup(mox.IgnoreArg(), 'foo').AndReturn(True)
         self.mox.ReplayAll()
 
-        self.stubs.Set(instance_obj.Instance, 'name', 'foo')
-        instance = instance_obj.Instance(uuid='fake-uuid')
+        self.stubs.Set(objects.Instance, 'name', 'foo')
+        instance = objects.Instance(uuid='fake-uuid')
         self.assertTrue(self.conn.instance_exists(instance))
 
     def test_instance_not_exists(self):
@@ -339,8 +339,8 @@ class XenAPIVMTestCase(stubs.XenAPITestBase):
         vm_utils.lookup(mox.IgnoreArg(), 'bar').AndReturn(None)
         self.mox.ReplayAll()
 
-        self.stubs.Set(instance_obj.Instance, 'name', 'bar')
-        instance = instance_obj.Instance(uuid='fake-uuid')
+        self.stubs.Set(objects.Instance, 'name', 'bar')
+        instance = objects.Instance(uuid='fake-uuid')
         self.assertFalse(self.conn.instance_exists(instance))
 
     def test_list_instances_0(self):
@@ -665,7 +665,7 @@ class XenAPIVMTestCase(stubs.XenAPITestBase):
                        fake_inject_instance_metadata)
 
         if create_record:
-            instance = instance_obj.Instance(context=self.context)
+            instance = objects.Instance(context=self.context)
             instance.project_id = self.project_id
             instance.user_id = self.user_id
             instance.image_ref = image_ref
@@ -682,8 +682,7 @@ class XenAPIVMTestCase(stubs.XenAPITestBase):
                 self.context, instance_type_id)
             instance.create()
         else:
-            instance = instance_obj.Instance.get_by_id(self.context,
-                                                       instance_id)
+            instance = objects.Instance.get_by_id(self.context, instance_id)
 
         network_info = fake_network.fake_get_instance_nw_info(self.stubs)
         if empty_dns:
@@ -1082,29 +1081,29 @@ class XenAPIVMTestCase(stubs.XenAPITestBase):
         self.check_vm_params_for_linux()
         self.assertEqual(actual_injected_files, injected_files)
 
-    def test_spawn_agent_upgrade(self):
+    @mock.patch('nova.db.agent_build_get_by_triple')
+    def test_spawn_agent_upgrade(self, mock_get):
         self.flags(use_agent_default=True,
                    group='xenserver')
 
-        def fake_agent_build(_self, *args):
-            return {"version": "1.1.0", "architecture": "x86-64",
-                    "hypervisor": "xen", "os": "windows",
-                    "url": "url", "md5hash": "asdf"}
-
-        self.stubs.Set(self.conn.virtapi, 'agent_build_get_by_triple',
-                       fake_agent_build)
+        mock_get.return_value = {"version": "1.1.0", "architecture": "x86-64",
+                                 "hypervisor": "xen", "os": "windows",
+                                 "url": "url", "md5hash": "asdf",
+                                 'created_at': None, 'updated_at': None,
+                                 'deleted_at': None, 'deleted': False,
+                                 'id': 1}
 
         self._test_spawn(IMAGE_VHD, None, None,
                          os_type="linux", architecture="x86-64")
 
-    def test_spawn_agent_upgrade_fails_silently(self):
-        def fake_agent_build(_self, *args):
-            return {"version": "1.1.0", "architecture": "x86-64",
-                    "hypervisor": "xen", "os": "windows",
-                    "url": "url", "md5hash": "asdf"}
-
-        self.stubs.Set(self.conn.virtapi, 'agent_build_get_by_triple',
-                       fake_agent_build)
+    @mock.patch('nova.db.agent_build_get_by_triple')
+    def test_spawn_agent_upgrade_fails_silently(self, mock_get):
+        mock_get.return_value = {"version": "1.1.0", "architecture": "x86-64",
+                                 "hypervisor": "xen", "os": "windows",
+                                 "url": "url", "md5hash": "asdf",
+                                 'created_at': None, 'updated_at': None,
+                                 'deleted_at': None, 'deleted': False,
+                                 'id': 1}
 
         self._test_spawn_fails_silently_with(exception.AgentError,
                 method="_plugin_agent_agentupdate", failure="fake_error")
@@ -1459,8 +1458,8 @@ class XenAPIVMTestCase(stubs.XenAPITestBase):
             self.conn.spawn(self.context, instance, image_meta, [], 'herp',
                             network_info)
         if obj:
-            instance = instance_obj.Instance._from_db_object(
-                self.context, instance_obj.Instance(), instance,
+            instance = objects.Instance._from_db_object(
+                self.context, objects.Instance(), instance,
                 expected_attrs=instance_obj.INSTANCE_DEFAULT_FIELDS)
         return instance
 
@@ -1789,8 +1788,8 @@ class XenAPIMigrateInstance(stubs.XenAPITestBase):
         self.mox.StubOutWithMock(vm_utils, 'get_vdi_for_vm_safely')
         self.mox.StubOutWithMock(vmops, '_restore_orig_vm_and_cleanup_orphan')
 
-        instance = instance_obj.Instance(context=self.context,
-                                         auto_disk_config=True, uuid='uuid')
+        instance = objects.Instance(context=self.context,
+                                    auto_disk_config=True, uuid='uuid')
         instance.obj_reset_changes()
         vm_ref = "vm_ref"
         dest = "dest"
@@ -2032,15 +2031,17 @@ class XenAPIHostTestCase(stubs.XenAPITestBase):
                                False, 'off_maintenance')
 
     def test_set_enable_host_enable(self):
-        _create_service_entries(self.context, values={'nova': ['host']})
+        _create_service_entries(self.context, values={'nova': ['fake-mini']})
         self._test_host_action(self.conn.set_host_enabled, True, 'enabled')
-        service = db.service_get_by_args(self.context, 'host', 'nova-compute')
+        service = db.service_get_by_args(self.context, 'fake-mini',
+                                         'nova-compute')
         self.assertEqual(service.disabled, False)
 
     def test_set_enable_host_disable(self):
-        _create_service_entries(self.context, values={'nova': ['host']})
+        _create_service_entries(self.context, values={'nova': ['fake-mini']})
         self._test_host_action(self.conn.set_host_enabled, False, 'disabled')
-        service = db.service_get_by_args(self.context, 'host', 'nova-compute')
+        service = db.service_get_by_args(self.context, 'fake-mini',
+                                         'nova-compute')
         self.assertEqual(service.disabled, True)
 
     def test_get_host_uptime(self):
@@ -2679,7 +2680,8 @@ class XenAPIDom0IptablesFirewallTestCase(stubs.XenAPITestBase):
         db.instance_add_security_group(admin_ctxt, instance_ref['uuid'],
                                        secgroup['id'])
         self.fw.prepare_instance_filter(instance_ref, network_info)
-        self.fw.instances[instance_ref['id']] = instance_ref
+        self.fw.instance_info[instance_ref['id']] = (instance_ref,
+                                                     network_info)
         self._validate_security_group()
         # add a rule to the security group
         db.security_group_rule_create(admin_ctxt,

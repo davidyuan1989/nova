@@ -20,6 +20,7 @@ A connection to the VMware ESX/vCenter platform.
 """
 
 import re
+import sys
 import time
 
 from eventlet import event
@@ -160,7 +161,7 @@ class VMwareESXDriver(driver.ComputeDriver):
         try:
             vim.client.service.Logout(session_manager)
         except suds.WebFault:
-            LOG.debug(_("No vSphere session was open during cleanup_host."))
+            LOG.debug("No vSphere session was open during cleanup_host.")
 
     def list_instances(self):
         """List VM instances."""
@@ -609,7 +610,7 @@ class VMwareVCDriver(VMwareESXDriver):
             nodename = self._create_nodename(node,
                                           self.dict_mors.get(node)['name'])
             node_list.append(nodename)
-        LOG.debug(_("The available nodes are: %s") % node_list)
+        LOG.debug("The available nodes are: %s", node_list)
         return node_list
 
     def get_host_stats(self, refresh=True):
@@ -832,16 +833,16 @@ class VMwareAPISession(object):
                         self.vim.TerminateSession(
                                 self.vim.get_service_content().sessionManager,
                                 sessionId=[self._session.key])
-                    except Exception as excep:
+                    except Exception:
                         # This exception is something we can live with. It is
                         # just an extra caution on our side. The session may
                         # have been cleared. We could have made a call to
                         # SessionIsActive, but that is an overhead because we
                         # anyway would have to call TerminateSession.
-                        LOG.debug(excep)
+                        LOG.debug("TerminateSession failed", exc_info=True)
                 self._session = session
                 return
-            except Exception as excep:
+            except Exception:
                 LOG.critical(_("Unable to connect to server at %(server)s, "
                     "sleeping for %(seconds)s seconds"),
                     {'server': self._host_ip, 'seconds': delay},
@@ -861,10 +862,11 @@ class VMwareAPISession(object):
                     self.vim.get_service_content().sessionManager,
                     sessionID=self._session.key,
                     userName=self._session.userName)
-        except Exception as e:
+        except Exception:
             LOG.warning(_("Unable to validate session %s!"),
                         self._session.key)
-            LOG.debug(_("Exception: %(ex)s"), {'ex': e})
+            LOG.debug("Unable to validate session %s", self._session.key,
+                      exc_info=True)
         return active
 
     def _call_method(self, module, method, *args, **kwargs):
@@ -874,7 +876,7 @@ class VMwareAPISession(object):
         args = list(args)
         retry_count = 0
         while True:
-            exc = None
+            exc_info = False
             try:
                 if not self._is_vim_object(module):
                     # If it is not the first try, then get the latest
@@ -893,7 +895,7 @@ class VMwareAPISession(object):
                 # If it is a Session Fault Exception, it may point
                 # to a session gone bad. So we try re-creating a session
                 # and then proceeding ahead with the call.
-                exc = excep
+                exc_info = sys.exc_info()
                 if error_util.NOT_AUTHENTICATED in excep.fault_list:
                     # Because of the idle session returning an empty
                     # RetrievePropertiesResponse and also the same is returned
@@ -915,35 +917,34 @@ class VMwareAPISession(object):
                         fault = excep.fault_list[0]
                         raise error_util.get_fault_class(fault)(str(excep))
                     break
-            except error_util.SessionOverLoadException as excep:
+            except error_util.SessionOverLoadException:
                 # For exceptions which may come because of session overload,
                 # we retry
-                exc = excep
-            except error_util.SessionConnectionException as excep:
+                exc_info = sys.exc_info()
+            except error_util.SessionConnectionException:
                 # For exceptions with connections we create the session
-                exc = excep
+                exc_info = sys.exc_info()
                 self._create_session()
-            except Exception as excep:
+            except Exception:
                 # If it is a proper exception, say not having furnished
                 # proper data in the SOAP call or the retry limit having
                 # exceeded, we raise the exception
-                exc = excep
+                exc_info = sys.exc_info()
                 break
 
-            LOG.debug(_("_call_method(session=%(key)s) failed. "
-                        "Module: %(module)s. "
-                        "Method: %(method)s. "
-                        "args: %(args)s. "
-                        "kwargs: %(kwargs)s. "
-                        "Iteration: %(n)s. "
-                        "Exception: %(ex)s. "),
+            LOG.debug("_call_method(session=%(key)s) failed. "
+                      "Module: %(module)s. "
+                      "Method: %(method)s. "
+                      "args: %(args)s. "
+                      "kwargs: %(kwargs)s. "
+                      "Iteration: %(n)s. ",
                       {'key': self._session.key,
                        'module': module,
                        'method': method,
                        'args': args,
                        'kwargs': kwargs,
-                       'n': retry_count,
-                       'ex': exc})
+                       'n': retry_count},
+                      exc_info=exc_info)
 
             # If retry count has been reached then break and
             # raise the exception
@@ -989,8 +990,8 @@ class VMwareAPISession(object):
             if task_info.state in ['queued', 'running']:
                 return
             elif task_info.state == 'success':
-                LOG.debug(_("Task [%(task_name)s] %(task_ref)s "
-                            "status: success"),
+                LOG.debug("Task [%(task_name)s] %(task_ref)s "
+                          "status: success",
                           {'task_name': task_name, 'task_ref': task_ref})
                 done.send(task_info)
             else:
