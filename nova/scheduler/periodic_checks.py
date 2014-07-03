@@ -1,5 +1,9 @@
 
-class PeriodicTasks(object):
+from nova.openstack.common import log as logging
+
+LOG = logging.getLogger(__name__)
+
+class PeriodicTasks(driver.Scheduler):
     '''
     This module contains 4 main functions:
         1. Accept user input through Nova API to create, update and delete checks
@@ -16,21 +20,31 @@ class PeriodicTasks(object):
     # list of running checks
     running_checks = [] 
     
-    def __init__(self, params):
+    # list of weighed nodes received from filter_scheduler
+    weighed_hosts = {}
+    
+    ''' @param:   '''
+    def __init__(self, *args, **kwargs):
         ''' 
         TODO:
             a. Get information about checks from Ceilometer
             b. Initialize adapters for each check
             c. Communicate with trusted_filter and let it know of my existence
         '''
-        pass
+        super(PeriodicTasks,self).__init__(*args, **kwargs)
+        
+    def receive_hosts(self, weighed_hosts):
+        this.weighed_hosts = weighed_hosts
+        LOG.debug("Periodic Checks received these Weighed %(hosts)s", {'hosts': weighed_hosts})
         
     def provideTrustedPool(self):
         # return the local trusted pool
+        
         pass
     
     def addCheck(self):
         # add check to local list and update Ceilometer database
+        
         pass
     
     def removeCheck(self):

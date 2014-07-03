@@ -33,7 +33,7 @@ from nova import rpc
 from nova.scheduler import driver
 from nova.scheduler import scheduler_options
 from nova.scheduler import utils as scheduler_utils
-
+from nova.scheduler import periodic_checks 
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -278,6 +278,9 @@ class FilterScheduler(driver.Scheduler):
                 scheduler_host_subset_size = len(weighed_hosts)
             if scheduler_host_subset_size < 1:
                 scheduler_host_subset_size = 1
+            
+            #send the list of weighed and filtered hosts to periodic checks
+            periodic_checks.receive_hosts(weighed_hosts)
 
             chosen_host = random.choice(
                 weighed_hosts[0:scheduler_host_subset_size])
