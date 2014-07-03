@@ -1,5 +1,6 @@
 
 from nova.openstack.common import log as logging
+from nova.scheduler import driver
 
 LOG = logging.getLogger(__name__)
 
