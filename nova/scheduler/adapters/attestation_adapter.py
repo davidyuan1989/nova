@@ -51,6 +51,7 @@ from nova.openstack.common.gettextutils import _
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.openstack.common import timeutils
+from nova.scheduler import adapters
 
 LOG = logging.getLogger(__name__)
 
@@ -67,6 +68,9 @@ trusted_opts = [
                help='Attestation web API URL'),
     cfg.StrOpt('attestation_auth_blob',
                help='Attestation authorization blob - must change'),
+    cfg.IntOpt('attestation_auth_timeout',
+               default=60,
+               help='Attestation status cache valid period length'),
 ]
 
 CONF = cfg.CONF
@@ -259,14 +263,8 @@ class ComputeAttestationCache(object):
         return level
 
 
-class ComputeAttestation(object):
-    def __init__(self, timeout=60):
-
-        catch_timeout = cfg.IntOpt('attestation_auth_timeout',
-               default=timeout,
-               help='Attestation status cache valid period length')       
-        CONF.register_opts(catch_timeout, group=trust_group)
-
+class ComputeAttestationAdapter(adapters.BaseAdapter):
+    def __init__(self):
         self.caches = ComputeAttestationCache()
 
     def is_trusted(self, host, trust):
