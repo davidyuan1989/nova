@@ -13,6 +13,7 @@
 Tests For Periodic Check.
 """
 import time
+import threading
 
 from nova import test
 from nova.openstack.common import periodic_task
@@ -35,8 +36,10 @@ class PeriodicTestCase(test.NoDBTestCase):
         self.assertEqual(2,self.periodic.check_times)
 
     def test_periodic_task(self):
+        t1 = threading.Thread(target=self.periodic.run_checks({}))
+        t1.start()
         time.sleep(16)
-    	self.assertEqual(4,pc.PeriodicChecks.testVar) # increments thrice
+    	self.assertEqual(4,t1.periodic.run_checks.check_times) # increments thrice
         
     def test_periodic_utils(self):
         @periodic_task.periodic_task(spacing=5,run_immediately=True)
