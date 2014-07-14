@@ -1,4 +1,3 @@
-#
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -20,17 +19,17 @@ from nova.scheduler import adapters
 
 class PeriodicChecks(object):
     '''This module contains 4 main functions:
-        1. Accept user input through Nova API to create, update and 
+        1. Accept user input through Nova API to create, update and
                 delete checks
-        2. Store checks and their parameters inside Ceilometer 
+        2. Store checks and their parameters inside Ceilometer
                 using (Ceilometer API?)
         3. Communicate with adapters for each running check
-        4. Communicate with trusted_filer.py to provide it with a 
-                trusted compute pool periodically or when user asks 
+        4. Communicate with trusted_filer.py to provide it with a
+                trusted compute pool periodically or when user asks
                 for get_trusted_pool
-    This component also mediates communication with OpenAttestation 
-    (OA) for the trusted_filter unless it is not running, in which case 
-    the trusted_filter will call OA directly.             
+    This component also mediates communication with OpenAttestation
+    (OA) for the trusted_filter unless it is not running, in which case
+    the trusted_filter will call OA directly.
     '''
         
     # list of running checks
