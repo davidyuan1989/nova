@@ -25,7 +25,7 @@ class PeriodicTestCase(test.NoDBTestCase):
     USES_DB = True
     periodic_cls =  pc.PeriodicChecks
     driver_cls_name = 'nova.scheduler.driver.Scheduler'
-    periodic = periodic_cls()
+    periodic = pc.PeriodicChecks()
 
     def setUp(self):
         super(PeriodicTestCase, self).setUp()
