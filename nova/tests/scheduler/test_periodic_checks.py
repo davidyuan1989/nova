@@ -34,10 +34,9 @@ class PeriodicTestCase(test.NoDBTestCase):
         time.sleep(10)
         self.assertEqual(2,self.periodic.check_times)
 
-    def test_periodic_task(self):
-        res = self.periodic.run_checks({})
-        time.sleep(12)
-    	self.assertEqual(3,res)
+    def test_periodic_task_(self):
+        time.sleep(16)
+    	self.assertEqual(4,self.periodic.current_check_times) # increments thrice
         
     def test_periodic_utils(self):
         @periodic_task.periodic_task(spacing=5,run_immediately=True)
