@@ -34,7 +34,7 @@ class PeriodicChecks(object):
         
     # list of running checks
     running_checks = {} 
-    check_times = 0
+    testVar = 1
     
     # periodic tasks not running by default
     periodic_tasks_running = False
@@ -91,6 +91,7 @@ class PeriodicChecks(object):
                     current_host = self.compute_nodes[host]
                     current_host['trust_lvl'] = result
         self.check_times += 1
+        PeriodicChecks.testVar += 1
         return self.check_times
         
     
