@@ -24,45 +24,47 @@ from nova.scheduler import periodic_checks as pc
 class PeriodicTestCase(test.NoDBTestCase):
     """Test case for host adapters."""
     USES_DB = True
-    periodic_cls =  pc.PeriodicChecks
-    driver_cls_name = 'nova.scheduler.driver.Scheduler'
-    periodic = periodic_cls()
+
+    def __init__(self):
+        periodic_cls =  pc.PeriodicChecks
+        self.driver_cls_name = 'nova.scheduler.driver.Scheduler'
+        self.periodic = periodic_cls()
 
     def setUp(self):
         super(PeriodicTestCase, self).setUp()
         self.flags(scheduler_driver=self.driver_cls_name)
-        
-
-    def test__init__(self):
-        time.sleep(10)
-        self.assertEqual(4,PeriodicTestCase.periodic.check_times)
-
-    def test_periodic_task(self):
-        #res = self.periodic.run_checks({})
-    	self.assertEqual(3,PeriodicTestCase.periodic.check_times)
         
     def test_periodic_utils(self):
         @periodic_task.periodic_task(spacing=5,run_immediately=True)
         def run_sample_checks():
             return "100"
         self.assertEqual("100", run_sample_checks())
+
+
+    def test__periodic_checks_init__(self):
+        time.sleep(10)
+        self.assertEqual(4,self.periodic.check_times)
+
+    def test_periodic_task(self):
+        #res = self.periodic.run_checks({})
+    	self.assertEqual(3,self.periodic.check_times)
+        
     	
     def test_compute_pool_init(self):
-        compute_nodes = PeriodicTestCase.periodic.compute_nodes
+        compute_nodes = self.periodic.compute_nodes
         self.assertFalse(compute_nodes,None)
 
     def test_periodic_checks_off(self):
         ''' Test that when component is turned off, it returns None as the
         compute pool
         '''
-        PeriodicTestCase.periodic.turn_off_periodic_check()
-        self.assertEqual(None,PeriodicTestCase.periodic.get_trusted_pool())
+        self.periodic.turn_off_periodic_check()
+        self.assertEqual(None,self.periodic.get_trusted_pool())
 
     def test_periodic_checks_on(self):
         ''' Test that when component is turned on, it does not return None as the
         compute pool
         '''
-        PeriodicTestCase.periodic.turn_off_periodic_check()
-        PeriodicTestCase.periodic.turn_on_periodic_check()
-        time.sleep(5)
-        self.assertFalse(None,PeriodicTestCase.periodic.get_trusted_pool())
+        self.periodic.turn_off_periodic_check()
+        self.periodic.turn_on_periodic_check()
+        self.assertFalse(None,self.periodic.get_trusted_pool())
