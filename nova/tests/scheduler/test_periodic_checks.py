@@ -29,7 +29,7 @@ class PeriodicTestCase(test.NoDBTestCase):
     def setUp(self):
         super(PeriodicTestCase, self).setUp()
         self.flags(scheduler_driver=self.driver_cls_name)
-    
+        
 
     def test__init__(self):
         time.sleep(10)
