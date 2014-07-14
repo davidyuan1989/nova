@@ -1,5 +1,3 @@
-#
-#
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -24,31 +22,27 @@ from nova.scheduler import periodic_checks as pc
 class PeriodicTestCase(test.NoDBTestCase):
     """Test case for host adapters."""
     USES_DB = True
-
-    def __init__(self):
-        periodic_cls =  pc.PeriodicChecks
-        self.driver_cls_name = 'nova.scheduler.driver.Scheduler'
-        self.periodic = periodic_cls()
+    periodic_cls =  pc.PeriodicChecks
+    driver_cls_name = 'nova.scheduler.driver.Scheduler'
 
     def setUp(self):
         super(PeriodicTestCase, self).setUp()
         self.flags(scheduler_driver=self.driver_cls_name)
+        self.periodic = self.periodic_cls()
+
+    def test__init__(self):
+        time.sleep(10)
+        self.assertEqual(2,self.periodic.check_times)
+
+    def test_periodic_task(self):
+        #res = self.periodic.run_checks({})
+    	self.assertEqual(3,res)
         
     def test_periodic_utils(self):
         @periodic_task.periodic_task(spacing=5,run_immediately=True)
         def run_sample_checks():
             return "100"
         self.assertEqual("100", run_sample_checks())
-
-
-    def test__periodic_checks_init__(self):
-        time.sleep(10)
-        self.assertEqual(4,self.periodic.check_times)
-
-    def test_periodic_task(self):
-        #res = self.periodic.run_checks({})
-    	self.assertEqual(3,self.periodic.check_times)
-        
     	
     def test_compute_pool_init(self):
         compute_nodes = self.periodic.compute_nodes
@@ -67,4 +61,5 @@ class PeriodicTestCase(test.NoDBTestCase):
         '''
         self.periodic.turn_off_periodic_check()
         self.periodic.turn_on_periodic_check()
+        time.sleep(5)
         self.assertFalse(None,self.periodic.get_trusted_pool())
