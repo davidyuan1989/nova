@@ -35,11 +35,11 @@ class PeriodicTestCase(test.NoDBTestCase):
 
     def test__init__(self):
         time.sleep(10)
-        self.assertEqual(4,self.periodic.check_times)
+        self.assertEqual(4,PeriodicTestCase.periodic.check_times)
 
     def test_periodic_task(self):
         #res = self.periodic.run_checks({})
-    	self.assertEqual(3,self.periodic.check_times)
+    	self.assertEqual(3,PeriodicTestCase.periodic.check_times)
         
     def test_periodic_utils(self):
         @periodic_task.periodic_task(spacing=5,run_immediately=True)
@@ -48,21 +48,21 @@ class PeriodicTestCase(test.NoDBTestCase):
         self.assertEqual("100", run_sample_checks())
     	
     def test_compute_pool_init(self):
-        compute_nodes = self.periodic.compute_nodes
+        compute_nodes = PeriodicTestCase.periodic.compute_nodes
         self.assertFalse(compute_nodes,None)
 
     def test_periodic_checks_off(self):
         ''' Test that when component is turned off, it returns None as the
         compute pool
         '''
-        self.periodic.turn_off_periodic_check()
-        self.assertEqual(None,self.periodic.get_trusted_pool())
+        PeriodicTestCase.periodic.turn_off_periodic_check()
+        self.assertEqual(None,PeriodicTestCase.periodic.get_trusted_pool())
 
     def test_periodic_checks_on(self):
         ''' Test that when component is turned on, it does not return None as the
         compute pool
         '''
-        self.periodic.turn_off_periodic_check()
-        self.periodic.turn_on_periodic_check()
+        PeriodicTestCase.periodic.turn_off_periodic_check()
+        PeriodicTestCase.periodic.turn_on_periodic_check()
         time.sleep(5)
-        self.assertFalse(None,self.periodic.get_trusted_pool())
+        self.assertFalse(None,PeriodicTestCase.periodic.get_trusted_pool())

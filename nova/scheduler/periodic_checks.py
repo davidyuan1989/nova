@@ -97,9 +97,9 @@ class PeriodicChecks(object):
     ''' Add checks through horizon
     @param id: identifier for the check
     @param spacing: time between successive checks in seconds
-    @param type-of_check: (optional) any additional info about of the check 
+    @param type-of_check: (optional) any additional info about of the check.
     '''
-    def add_check(self,**kwargs):
+    def add_check(self, **kwargs):
         ''' check_id = kwargs['id']
         set the periodic tasks running flag to True
         TODO write new check into CONF and then call adapter
