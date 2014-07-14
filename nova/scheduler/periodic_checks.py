@@ -91,7 +91,7 @@ class PeriodicChecks(object):
                     result = adapter.is_trusted(host, 'trusted')
                     current_host = self.compute_nodes[host]
                     current_host['trust_lvl'] = result
-            self.check_times += 1
+        self.check_times += 1
         return self.check_times
         
     
