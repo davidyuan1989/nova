@@ -58,7 +58,7 @@ class PeriodicChecks(object):
         # test code
         self.check_times = 1
         # start checks
-        self.current_check_times = self.run_checks({})
+        self.run_checks({})
         computes = db.compute_node_get_all(admin)
         for compute in computes:
             service = compute['service']
