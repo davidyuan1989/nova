@@ -31,10 +31,11 @@ class PeriodicTestCase(test.NoDBTestCase):
         self.periodic = self.periodic_cls()
 
     def test__init__(self):
-        self.assertEqual(2,self.periodic.check_times)
+        time.sleep(10)
+        self.assertEqual(4,self.periodic.check_times)
 
     def test_periodic_task(self):
-        res = self.periodic.run_checks({})
+        #res = self.periodic.run_checks({})
     	self.assertEqual(3,res)
         
     def test_periodic_utils(self):
