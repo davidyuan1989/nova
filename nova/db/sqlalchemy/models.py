@@ -1400,3 +1400,18 @@ class PciDevice(BASE, NovaBase):
                             primaryjoin='and_('
                             'PciDevice.instance_uuid == Instance.uuid,'
                             'PciDevice.deleted == 0)')
+
+
+class PeriodicChecks(BASE, NovaBase):
+    """Represents results from dynamic checks in nova scheduler's
+    periodic_checks file
+    """
+
+    __tablename__ = 'periodic_checks'
+    __table_args__ = ()
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime)
+    check_id = Column(String(50), nullable=False)
+    host = Column(String(50), nullable=False)
+    result = Column(String(5), nullable=False,default=False)
+    status = Column(String(200), nullable=False)
