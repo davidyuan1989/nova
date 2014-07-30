@@ -20,6 +20,9 @@ check_opts = [
     cfg.IntOpt('spacing',
                 default=10,
                 help='Periodic check spacing time'),
+    cfg.BoolOpt('saved_trusted_pool',
+                default=False,
+                help='Whether save trusted pool')
 ]
 
 CONF = cfg.CONF
@@ -151,6 +154,12 @@ class PeriodicChecks(object):
 
     def turn_on_periodic_check(self):
         CONF.periodic_checks.periodic_tasks_running = True
+
+    def set_save_trusted_pool(self):
+        CONF.periodic_checks.saved_trusted_pool = True
+        
+    def set_unsave_trusted_pool(self):
+        CONF.periodic_checks.saved_trusted_pool = False
 
     '''return 100 check resutls by default'''
     def periodic_checks_results_get(self, context, num_of_results=100):
