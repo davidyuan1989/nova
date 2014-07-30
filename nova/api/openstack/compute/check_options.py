@@ -64,9 +64,9 @@ class Controller(wsgi.Controller):
 
         """
         try:
-            checks_enabled =
+            checks_enabled = \
                 periodic_checks.PeriodicChecks().is_periodic_check_enabled()
-            trusted_pool_saved =
+            trusted_pool_saved = \
                 periodic_checks.PeriodicChecks().is_trusted_pool_saved()
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
