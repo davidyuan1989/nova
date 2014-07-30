@@ -85,7 +85,7 @@ class Controller(wsgi.Controller):
         }
 
     @wsgi.serializers(xml=CheckOptionTemplate)
-    def update():
+    def update(self, req, id, body):
         """Update periodic check options.
 
         :param req: `wsgi.Request` object
