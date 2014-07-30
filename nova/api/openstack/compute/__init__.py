@@ -23,6 +23,7 @@ from oslo.config import cfg
 import nova.api.openstack
 from nova.api.openstack.compute import consoles
 from nova.api.openstack.compute import check_results
+from nova.api.openstack.compute import check_options
 from nova.api.openstack.compute import extensions
 from nova.api.openstack.compute import flavors
 from nova.api.openstack.compute import image_metadata
@@ -142,6 +143,13 @@ class APIRouter(nova.api.openstack.APIRouter):
                 check_results.create_resource()
             mapper.resource("check_result", "check_results",
                             controller=self.resources['check_results'],
+                            collection={'detail': 'GET'})
+
+         if init_only is None or 'check_options' in init_only:
+            self.resources['check_options'] = \
+                check_results.create_resource()
+            mapper.resource("check_option", "check_options",
+                            controller=self.resources['check_options'],
                             collection={'detail': 'GET'})
 
 
