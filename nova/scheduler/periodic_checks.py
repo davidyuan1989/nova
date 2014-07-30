@@ -108,21 +108,13 @@ class PeriodicChecks(object):
         db.periodic_check_create(context, values)
         self.adapter_list = self._get_all_adapters()
 
-    def remove_check(self, context, values):
-        ''' stop and delete adapter for this check and update mysql database
+    def update_adapters_list(self):
+        ''' Update adaters list
         '''
-        name = values['name']
-        '''Don't allow Open Attestation check to be removed
-        '''
-        if name.lower() == "ComputeAttestationAdapter".lower():
-            raise exception.CannotDeleteOpenAttestationPeriodicCheck()
-        db.periodic_check_delete(context, name)
         self.adapter_list = self._get_all_adapters()
 
-    def update_check(self, context, values):
-        name = values['name']
-        db.periodic_check_update(context, name, values)
-        self.cache_spacing[name] = values['spacing']
+    def update_adapter(self, context, name, spacing):
+        self.cache_spacing[name] = spacing
 
     def get_check_by_name(self, context, values):
         name = values['name']
@@ -149,17 +141,17 @@ class PeriodicChecks(object):
             return self.compute_nodes
         return None
 
-    def turn_off_periodic_check(self):
-        CONF.periodic_checks.periodic_tasks_running = False
+    def is_periodic_check_enabled(self):
+        return CONF.periodic_checks.periodic_tasks_running
 
-    def turn_on_periodic_check(self):
-        CONF.periodic_checks.periodic_tasks_running = True
+    def set_periodic_check_enabled(self, value):
+        CONF.periodic_checks.periodic_tasks_running = value
 
-    def set_save_trusted_pool(self):
-        CONF.periodic_checks.saved_trusted_pool = True
+    def is_trusted_pool_saved(self):
+        return CONF.periodic_checks.saved_trusted_pool
         
-    def set_unsave_trusted_pool(self):
-        CONF.periodic_checks.saved_trusted_pool = False
+    def set_trusted_pool_saved(self, value):
+        CONF.periodic_checks.saved_trusted_pool = value
 
     '''return 100 check resutls by default'''
     def periodic_checks_results_get(self, context, num_of_results=100):
@@ -174,7 +166,7 @@ class PeriodicChecks(object):
     removed node can be returned to trusted pool
     '''
     def run_checks_specific_nodes(self, context, input_nodes):
-        if(PeriodicChecks.periodic_tasks_running):
+        if PeriodicChecks.periodic_tasks_running:
             for host in input_nodes:
                 for adapter in self.adapter_list:
                     adapter_instance = adapter()
@@ -186,7 +178,7 @@ class PeriodicChecks(object):
     def run_checks(self, context):
         ''' Store results of each check periodically
         '''
-        if(PeriodicChecks.periodic_tasks_running):
+        if PeriodicChecks.periodic_tasks_running:
             for host in self.compute_nodes:
                 for adapter in self.adapter_list:
                     adapter_instance = adapter()

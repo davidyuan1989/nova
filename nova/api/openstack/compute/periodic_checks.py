@@ -22,6 +22,7 @@ from nova.api.openstack import xmlutil
 from nova import db
 from nova import exception
 from nova.openstack.common import gettextutils
+from nova.scheduler import periodic_checks
 
 
 _ = gettextutils._
@@ -130,6 +131,7 @@ class Controller(wsgi.Controller):
             periodic_check = db.periodic_check_get_by_id(context, id)
             db.periodic_check_delete_by_id(context, id)
             os.remove(("nova/scheduler/adapters/%s.py") % periodic_check.name)
+            periodic_checks.PeriodicChecks().update_adapters_list()
         except exception.NotFound:
             explanation = _("Periodic check not found.")
             raise webob.exc.HTTPNotFound(explanation=explanation)
@@ -207,6 +209,7 @@ class Controller(wsgi.Controller):
             #periodic_checks.add_check(context, {id, name, desc, spacing, timeout})
             db.periodic_check_create(context, periodic_check_dict)
             periodic_check = db.periodic_check_get(context, name)
+            periodic_checks.PeriodicChecks().update_adapters_list()
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 
@@ -225,8 +228,10 @@ class Controller(wsgi.Controller):
             periodic_check_dict = body['periodic_check']
 
             name = periodic_check_dict['name']
+            spacing = periodic_check_dict['spacing']
             db.periodic_check_update(context, name, periodic_check_dict)
             periodic_check = db.periodic_check_get(context, name)
+            periodic_checks.PeriodicChecks().update_adapter(name, spacing)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 
