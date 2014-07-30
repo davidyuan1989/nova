@@ -25,7 +25,7 @@ _ = gettextutils._
 
 
 def make_check_option(elem):
-    elem.set('name')
+    elem.set('id')
     elem.set('value')
 
     elem.append(common.MetadataTemplate())
@@ -74,11 +74,11 @@ class Controller(wsgi.Controller):
         return {
             "check_options": [
                 {
-                    "name": "periodic_checks_enabled",
+                    "id": "periodic_checks_enabled",
                     "value": checks_enabled
                 },
                 {
-                    "name": "trusted_pool_saved",
+                    "id": "trusted_pool_saved",
                     "value": trusted_pool_saved
                 }
             ]
@@ -94,11 +94,11 @@ class Controller(wsgi.Controller):
         try:
             options_dict = body['check_option']
 
-            name = options_dict['name']
+            id = options_dict['id']
             value = options_dict['value']
-            if name == 'periodic_checks_enabled':
+            if id == 'periodic_checks_enabled':
                 periodic_checks.PeriodicChecks().set_periodic_check_enabled(value)
-            if name == 'trusted_pool_saved':
+            if id == 'trusted_pool_saved':
                 periodic_checks.PeriodicChecks().set_trusted_pool_saved(value)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
