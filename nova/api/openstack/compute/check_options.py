@@ -24,21 +24,29 @@ from nova.scheduler import periodic_checks
 _ = gettextutils._
 
 
-def make_check_options(elem):
-    elem.set('periodic_checks_enabled')
-    elem.set('trusted_pool_saved')
+def make_check_option(elem):
+    elem.set('name')
+    elem.set('value')
 
     elem.append(common.MetadataTemplate())
 
 
-check_options_nsmap = {None: xmlutil.XMLNS_V11, 'atom': xmlutil.XMLNS_ATOM}
+check_option_nsmap = {None: xmlutil.XMLNS_V11, 'atom': xmlutil.XMLNS_ATOM}
 
 
 class CheckOptionsTemplate(xmlutil.TemplateBuilder):
     def construct(self):
         root = xmlutil.TemplateElement('check_options')
+        elem = xmlutil.SubTemplateElement(root, 'check_option',
+            selector='check_option')
         make_check_options(root)
-        return xmlutil.MasterTemplate(root, 1, nsmap=check_options_nsmap)
+        return xmlutil.MasterTemplate(root, 1, nsmap=check_option_nsmap)
+
+class CheckOptionTemplate(xmlutil.TemplateBuilder):
+    def construct(self):
+        root = xmlutil.TemplateElement('check_options')
+        make_check_options(root)
+        return xmlutil.MasterTemplate(root, 1, nsmap=check_option_nsmap)
 
 
 class Controller(wsgi.Controller):
@@ -64,13 +72,19 @@ class Controller(wsgi.Controller):
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 
         return {
-            "check_options": {
-                "periodic_checks_enabled": checks_enabled,
-                "trusted_pool_saved": trusted_pool_saved
-            }
+            "check_options": [
+                {
+                    "name": "periodic_checks_enabled",
+                    "value": checks_enabled
+                },
+                {
+                    "name": "trusted_pool_saved",
+                    "value": trusted_pool_saved
+                }
+            ]
         }
 
-
+    @wsgi.serializers(xml=CheckOptionTemplate)
     def update():
         """Update periodic check options.
 
@@ -78,13 +92,14 @@ class Controller(wsgi.Controller):
         :param body: properties
         """
         try:
-            options_dict = body['check_options']
+            options_dict = body['check_option']
 
-            checks_enabled = options_dict['periodic_checks_enabled']
-            trusted_pool_saved = options_dict['trusted_pool_saved']
-
-            periodic_checks.PeriodicChecks().set_trusted_pool_saved(trusted_pool_saved)
-            periodic_checks.PeriodicChecks().set_periodic_check_enabled(checks_enabled)
+            name = options_dict['name']
+            value = options_dict['value']
+            if name == 'periodic_checks_enabled':
+                periodic_checks.PeriodicChecks().set_periodic_check_enabled(value)
+            if name == 'trusted_pool_saved':
+                periodic_checks.PeriodicChecks().set_trusted_pool_saved(value)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 
