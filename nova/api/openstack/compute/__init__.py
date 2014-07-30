@@ -147,7 +147,7 @@ class APIRouter(nova.api.openstack.APIRouter):
 
         if init_only is None or 'check_options' in init_only:
             self.resources['check_options'] = \
-                check_results.create_resource()
+                check_options.create_resource()
             mapper.resource("check_option", "check_options",
                             controller=self.resources['check_options'],
                             collection={'detail': 'GET'})
