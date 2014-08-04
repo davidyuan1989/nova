@@ -19,6 +19,7 @@ from nova import db
 from nova import exception
 from nova.openstack.common import gettextutils
 from nova.scheduler import periodic_checks
+from nova.scheduler import rpcapi
 
 
 _ = gettextutils._
@@ -55,6 +56,7 @@ class Controller(wsgi.Controller):
     def __init__(self, **kwargs):
         """Initialize new `ResultsController`."""
         super(Controller, self).__init__(**kwargs)
+        self.scheduler_rpcapi = rpcapi.SchedulerAPI()
 
     @wsgi.serializers(xml=CheckOptionsTemplate)
     def index(self, req):
@@ -64,10 +66,11 @@ class Controller(wsgi.Controller):
 
         """
         try:
+            context = req.environ['nova.context']
             checks_enabled = \
-                periodic_checks.PeriodicChecks().is_periodic_check_enabled()
+                self.scheduler_rpcapi.is_periodic_checks_enabled(contex)
             trusted_pool_saved = \
-                periodic_checks.PeriodicChecks().is_trusted_pool_saved()
+                self.scheduler_rpcapi.is_trusted_pool_saved(context)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 
@@ -96,10 +99,12 @@ class Controller(wsgi.Controller):
 
             id = options_dict['id']
             value = options_dict['value']
+
+            context = req.environ['nova.context']
             if id == 'periodic_checks_enabled':
-                periodic_checks.PeriodicChecks().set_periodic_check_enabled(value)
+                self.scheduler_rpcapi.set_periodic_checks_enabled(context, value)
             if id == 'trusted_pool_saved':
-                periodic_checks.PeriodicChecks().set_trusted_pool_saved(value)
+                self.scheduler_rpcapi.set_trusted_pool_saved(context, value)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 

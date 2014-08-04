@@ -101,6 +101,18 @@ class SchedulerManager(manager.Manager):
                                                   'task_state': None},
                                                   context, ex, request_spec)
 
+    def set_periodic_checks_enabled(self, context, value):
+        self.periodic_checks.set_periodic_check_enabled(value)
+
+    def set_trusted_pool_saved(self, context, value):
+        self.periodic_checks.set_trusted_pool_saved(value)
+
+    def is_periodic_checks_enabled(self, context):
+        return self.periodic_checks.is_periodic_check_enabled()
+
+    def is_trusted_pool_saved(self, context):
+        return self.periodic_checks.is_trusted_pool_saved()
+
     def prep_resize(self, context, image, request_spec, filter_properties,
                     instance, instance_type, reservations):
         """Tries to call schedule_prep_resize on the driver.

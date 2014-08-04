@@ -118,3 +118,23 @@ class SchedulerAPI(object):
                    image=image_p, request_spec=request_spec,
                    filter_properties=filter_properties,
                    reservations=reservations_p)
+
+    def set_periodic_checks_enabled(self, ctxt, value):
+        cctxt = self.client.prepare()
+        return cctxt.call(ctxt, 'set_periodic_checks_enabled',
+            value=value)
+
+    def set_trusted_pool_saved(self, ctxt, value):
+        cctxt = self.client.prepare()
+        return cctxt.call(ctxt, 'set_trusted_pool_saved',
+            value=value)
+
+    def is_periodic_checks_enabled(self, ctxt):
+        cctxt = self.client.prepare()
+        return cctxt.call(ctxt, 'is_periodic_checks_enabled',
+            value=value)
+
+    def is_trusted_pool_saved(self, ctxt):
+        cctxt = self.client.prepare()
+        return cctxt.call(ctxt, 'is_trusted_pool_saved',
+            value=value)

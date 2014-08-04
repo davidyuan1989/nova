@@ -145,12 +145,14 @@ class PeriodicChecks(object):
         return CONF.periodic_checks.periodic_tasks_running
 
     def set_periodic_check_enabled(self, value):
+        LOG.debug("Periodic check enabled[%s]", value)
         CONF.periodic_checks.periodic_tasks_running = value
 
     def is_trusted_pool_saved(self):
         return CONF.periodic_checks.saved_trusted_pool
         
     def set_trusted_pool_saved(self, value):
+        LOG.debug("Trusted pool saved[%s]", value)
         CONF.periodic_checks.saved_trusted_pool = value
 
     '''return 100 check resutls by default'''
