@@ -68,7 +68,7 @@ class Controller(wsgi.Controller):
         try:
             context = req.environ['nova.context']
             checks_enabled = \
-                self.scheduler_rpcapi.is_periodic_checks_enabled(contex)
+                self.scheduler_rpcapi.is_periodic_checks_enabled(context)
             trusted_pool_saved = \
                 self.scheduler_rpcapi.is_trusted_pool_saved(context)
         except exception.Invalid as e:
