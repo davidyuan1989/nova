@@ -136,3 +136,18 @@ class SchedulerAPI(object):
     def is_trusted_pool_saved(self, ctxt):
         cctxt = self.client.prepare()
         return cctxt.call(ctxt, 'is_trusted_pool_saved')
+
+    def add_periodic_check(self, ctxt, value):
+        cctxt = self.client.prepare()
+        return cctxt.call(ctxt, 'add_periodic_check',
+            value=value)
+
+    def del_periodic_check(self, ctxt, value):
+        cctxt = self.client.prepare()
+        return cctxt.call(ctxt, 'del_periodic_check',
+            value=value)
+
+    def update_periodic_check(self, ctxt, value):
+        cctxt = self.client.prepare()
+        return cctxt.call(ctxt, 'update_periodic_check',
+            value=value)

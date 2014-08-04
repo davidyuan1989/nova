@@ -113,6 +113,15 @@ class SchedulerManager(manager.Manager):
     def is_trusted_pool_saved(self, context):
         return self.periodic_checks.is_trusted_pool_saved()
 
+    def add_periodic_check(self, context, values):
+        self.periodic_checks.add_periodic_check(context, values)
+
+    def update_periodic_check(self):
+        self.periodic_checks.update_periodic_check()
+
+    def del_periodic_check(self, context, name, spacing):
+        self.periodic_checks.del_periodic_check(context, name, spacing)
+
     def prep_resize(self, context, image, request_spec, filter_properties,
                     instance, instance_type, reservations):
         """Tries to call schedule_prep_resize on the driver.

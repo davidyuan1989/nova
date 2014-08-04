@@ -23,6 +23,7 @@ from nova import db
 from nova import exception
 from nova.openstack.common import gettextutils
 from nova.scheduler import periodic_checks
+from nova.scheduler import rpcapi
 
 
 _ = gettextutils._
@@ -74,6 +75,7 @@ class Controller(wsgi.Controller):
     def __init__(self, **kwargs):
         """Initialize new `PeriodicCheckController`."""
         super(Controller, self).__init__(**kwargs)
+        self.scheduler_rpcapi = rpcapi.SchedulerAPI()
 
     def _get_filters(self, req):
         """Return a dictionary of query param filters from the request.
@@ -131,7 +133,7 @@ class Controller(wsgi.Controller):
             periodic_check = db.periodic_check_get_by_id(context, id)
             db.periodic_check_delete_by_id(context, id)
             os.remove(("nova/scheduler/adapters/%s.py") % periodic_check.name)
-            periodic_checks.PeriodicChecks().update_adapters_list()
+            self.scheduler_rpcapi.del_periodic_check(context)
         except exception.NotFound:
             explanation = _("Periodic check not found.")
             raise webob.exc.HTTPNotFound(explanation=explanation)
@@ -209,7 +211,7 @@ class Controller(wsgi.Controller):
             #periodic_checks.add_check(context, {id, name, desc, spacing, timeout})
             db.periodic_check_create(context, periodic_check_dict)
             periodic_check = db.periodic_check_get(context, name)
-            periodic_checks.PeriodicChecks().update_adapters_list()
+            self.scheduler_rpcapi.add_periodic_check(context)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 
@@ -231,7 +233,7 @@ class Controller(wsgi.Controller):
             spacing = periodic_check_dict['spacing']
             db.periodic_check_update(context, name, periodic_check_dict)
             periodic_check = db.periodic_check_get(context, name)
-            periodic_checks.PeriodicChecks().update_adapter(name, spacing)
+            self.scheduler_rpcapi.update_periodic_check(context, name, spacing)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 

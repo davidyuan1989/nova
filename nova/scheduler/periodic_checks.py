@@ -99,21 +99,20 @@ class PeriodicChecks(object):
     @param spacing: time between successive checks in seconds
     @param type-of_check: (optional) any additional info about of the check
     '''
-    def add_check(self, context, values):
+    def add_periodic_check(self, context, values):
         ''' check_id = kwargs['id']
         set the periodic tasks running flag to True
         TODO write new check into CONF and then call adapter
         '''
         CONF.periodic_checks.periodic_tasks_running = True
-        db.periodic_check_create(context, values)
         self.adapter_list = self._get_all_adapters()
 
-    def update_adapters_list(self):
+    def update_periodic_check(self):
         ''' Update adaters list
         '''
         self.adapter_list = self._get_all_adapters()
 
-    def update_adapter(self, context, name, spacing):
+    def del_periodic_check(self, context, name, spacing):
         self.cache_spacing[name] = spacing
 
     def get_check_by_name(self, context, values):
