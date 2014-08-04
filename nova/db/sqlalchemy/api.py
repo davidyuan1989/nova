@@ -6112,7 +6112,7 @@ def pci_device_update(context, node_id, address, values):
 def periodic_check_results_get(context, num_results):
     results = model_query(context, models.CheckResults).\
                         filter_by(deleted=0).\
-                        order_by(desc("id").\
+                        order_by(desc("id")).\
                         limit(num_results)
     return results
 
