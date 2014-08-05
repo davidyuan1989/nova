@@ -70,7 +70,7 @@ class PeriodicChecks(object):
             check = db.periodic_check_get(context, self._get_name(adapter))
             if not check:
                 check = {'name':self._get_name(adapter), 'spacing' : 60, 'desc': adapter.__name__, 'timeout':10}
-                self.add_check(context, check);
+                db.periodic_check_create(context, check)
             self.cache_spacing[check['name']] = check['spacing']
 
     def initialize_trusted_pool(self, context):
@@ -104,12 +104,14 @@ class PeriodicChecks(object):
         '''
         CONF.periodic_checks.periodic_tasks_running = True
         self.adapter_list = self._get_all_adapters()
+        self._initialize_DB(context)
 
-    def update_periodic_check(self, context, name, spacing, timeout):
-        self.cache_spacing[name] = spacing
+    def update_periodic_check(self, context):
+        self._initialize_DB(context)
 
     def del_periodic_check(self, context, name):
         self.adapter_list = self._get_all_adapters()
+        self._initialize_DB(context)
 
     def get_check_by_name(self, context, values):
         name = values['name']

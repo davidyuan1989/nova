@@ -197,7 +197,7 @@ class Controller(wsgi.Controller):
         try:
             periodic_check_dict = body['periodic_check']
 
-            #id = periodic_check_dict['id']
+            periodic_check_dict['id'] = None
             name = periodic_check_dict['name']
             #desc = periodic_check_dict['desc']
             #spacing = periodic_check_dict['spacing']
