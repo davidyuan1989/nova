@@ -131,7 +131,7 @@ class PeriodicChecks(object):
     removed node can be returned to trusted pool
     '''
     def run_checks_specific_nodes(self, context, input_nodes):
-        if self.is_periodic_check_enabled:
+        if self.is_periodic_check_enabled():
             for host in input_nodes:
                 for adapter in self.adapter_list:
                     adapter_instance = adapter()
@@ -143,7 +143,7 @@ class PeriodicChecks(object):
     def run_checks(self, context):
         ''' Store results of each check periodically
         '''
-        if self.is_periodic_check_enabled:
+        if self.is_periodic_check_enabled():
             for host in self.compute_nodes:
                 for adapter in self.adapter_list:
                     adapter_instance = adapter()
