@@ -137,17 +137,6 @@ class SchedulerAPI(object):
         cctxt = self.client.prepare()
         return cctxt.call(ctxt, 'is_trusted_pool_saved')
 
-    def add_periodic_check(self, ctxt, name):
+    def update_periodic_check(self, ctxt):
         cctxt = self.client.prepare()
-        return cctxt.call(ctxt, 'add_periodic_check',
-            name=name)
-
-    def del_periodic_check(self, ctxt, name):
-        cctxt = self.client.prepare()
-        return cctxt.call(ctxt, 'del_periodic_check',
-            name=name)
-
-    def update_periodic_check(self, ctxt, name, spacing, timeout):
-        cctxt = self.client.prepare()
-        return cctxt.call(ctxt, 'update_periodic_check',
-            name=name, spacing=spacing, timeout=timeout)
+        return cctxt.call(ctxt, 'update_periodic_check')

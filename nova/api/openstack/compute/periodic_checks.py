@@ -133,7 +133,7 @@ class Controller(wsgi.Controller):
             periodic_check = db.periodic_check_get_by_id(context, id)
             db.periodic_check_delete_by_id(context, id)
             os.remove(("nova/scheduler/adapters/%s.py") % periodic_check.name)
-            self.scheduler_rpcapi.del_periodic_check(context, periodic_check.name)
+            self.scheduler_rpcapi.update_periodic_check(context)
         except exception.NotFound:
             explanation = _("Periodic check not found.")
             raise webob.exc.HTTPNotFound(explanation=explanation)
@@ -211,7 +211,7 @@ class Controller(wsgi.Controller):
             #periodic_checks.add_check(context, {id, name, desc, spacing, timeout})
             db.periodic_check_create(context, periodic_check_dict)
             periodic_check = db.periodic_check_get(context, name)
-            self.scheduler_rpcapi.add_periodic_check(context, name)
+            self.scheduler_rpcapi.update_periodic_check(context)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 
@@ -234,7 +234,7 @@ class Controller(wsgi.Controller):
             timeout = periodic_check_dict['timeout']
             db.periodic_check_update(context, name, periodic_check_dict)
             periodic_check = db.periodic_check_get(context, name)
-            self.scheduler_rpcapi.update_periodic_check(context, name, spacing, timeout)
+            self.scheduler_rpcapi.update_periodic_check(context)
         except exception.Invalid as e:
             raise webob.exc.HTTPBadRequest(explanation=e.format_message())
 

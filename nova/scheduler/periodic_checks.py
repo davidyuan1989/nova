@@ -92,24 +92,7 @@ class PeriodicChecks(object):
             ['nova.scheduler.adapters.all_adapters'])
         return classes
 
-    ''' Add checks through horizon
-    @param id: identifier for the check
-    @param spacing: time between successive checks in seconds
-    @param type-of_check: (optional) any additional info about of the check
-    '''
-    def add_periodic_check(self, context, name):
-        ''' check_id = kwargs['id']
-        set the periodic tasks running flag to True
-        TODO write new check into CONF and then call adapter
-        '''
-        CONF.periodic_checks.periodic_tasks_running = True
-        self.adapter_list = self._get_all_adapters()
-        self._initialize_DB(context)
-
     def update_periodic_check(self, context):
-        self._initialize_DB(context)
-
-    def del_periodic_check(self, context, name):
         self.adapter_list = self._get_all_adapters()
         self._initialize_DB(context)
 
