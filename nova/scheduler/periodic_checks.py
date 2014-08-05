@@ -45,8 +45,6 @@ class PeriodicChecks(object):
     the trusted_filter will call OA directly.
     '''
 
-    ''' periodic tasks not running by default '''
-    periodic_tasks_running = True
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -120,14 +118,6 @@ class PeriodicChecks(object):
     def get_all_checks(self, context):
         return db.periodic_check_get_all(context)
 
-    def is_periodic_checks_running(self):
-        ''' Used to check of periodic tasks are running by
-        scheduler.filters.trusted_filter
-        '''
-        if CONF.periodic_checks.periodic_tasks_running:
-            return True
-        return False
-
     def get_running_checks(self):
         if CONF.periodic_checks.periodic_tasks_running:
             return db.periodic_check_get_all
@@ -152,20 +142,11 @@ class PeriodicChecks(object):
         LOG.debug("Trusted pool saved[%s]", value)
         CONF.periodic_checks.saved_trusted_pool = value
 
-    '''return 100 check resutls by default'''
-    def periodic_checks_results_get(self, context, num_of_results=100):
-        results = db.periodic_check_results_get(context, num_of_results)
-        return results
-
-    def periodic_checks_results_delete_by_id(self, context, id):
-        result = db.periodic_check_results_delete_by_id(context, id)
-        return result
-
     '''Runs a check manually on an input list of nodes so that previously
     removed node can be returned to trusted pool
     '''
     def run_checks_specific_nodes(self, context, input_nodes):
-        if PeriodicChecks.periodic_tasks_running:
+        if self.is_periodic_check_enabled:
             for host in input_nodes:
                 for adapter in self.adapter_list:
                     adapter_instance = adapter()
@@ -177,7 +158,7 @@ class PeriodicChecks(object):
     def run_checks(self, context):
         ''' Store results of each check periodically
         '''
-        if PeriodicChecks.periodic_tasks_running:
+        if self.is_periodic_check_enabled:
             for host in self.compute_nodes:
                 for adapter in self.adapter_list:
                     adapter_instance = adapter()
