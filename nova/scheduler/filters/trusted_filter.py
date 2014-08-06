@@ -288,13 +288,13 @@ class TrustedFilter(filters.BaseHostFilter):
         ''' Check if periodic tasks are running.'''
         # get the nodes from Periodic Tasks
 
-        context = context.get_admin_context()
-        if self.scheduler_rpcapi.is_periodic_checks_enabled(context):
+        admin = context.get_admin_context()
+        if self.scheduler_rpcapi.is_periodic_checks_enabled(admin):
             # periodic checks are running
-            hosts = self.scheduler_rpcapi.get_trusted_pool(context)
+            hosts = self.scheduler_rpcapi.get_trusted_pool(admin)
             host = hosts[host_state.host]
             LOG.debug("Trusted filter hosts: [%s]", hosts)
-            if self.scheduler_rpcapi.is_trusted_pool_saved(context):
+            if self.scheduler_rpcapi.is_trusted_pool_saved(admin):
                 self.compute_attestation.caches.compute_nodes = hosts
             return host['trust_lvl']
         else:
