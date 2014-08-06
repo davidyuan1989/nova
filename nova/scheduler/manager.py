@@ -101,6 +101,9 @@ class SchedulerManager(manager.Manager):
                                                   'task_state': None},
                                                   context, ex, request_spec)
 
+    def get_trusted_pool(self, context):
+        return self.periodic_checks.get_trusted_pool()
+
     def set_periodic_checks_enabled(self, context, value):
         self.periodic_checks.set_periodic_check_enabled(value)
 

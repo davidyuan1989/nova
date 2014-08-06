@@ -119,6 +119,10 @@ class SchedulerAPI(object):
                    filter_properties=filter_properties,
                    reservations=reservations_p)
 
+    def get_trusted_pool(self, ctxt):
+        cctxt = self.client.prepare()
+        return cctxt.call(ctxt, 'get_trusted_pool')
+
     def set_periodic_checks_enabled(self, ctxt, value):
         cctxt = self.client.prepare()
         return cctxt.call(ctxt, 'set_periodic_checks_enabled',

@@ -56,6 +56,7 @@ from nova.openstack.common import log as logging
 from nova.openstack.common import timeutils
 from nova.scheduler import filters
 from nova.scheduler import periodic_checks
+from nova.scheduler import rpcapi
 
 LOG = logging.getLogger(__name__)
 
@@ -280,17 +281,20 @@ class TrustedFilter(filters.BaseHostFilter):
 
     def __init__(self):
         self.compute_attestation = ComputeAttestation()
+        self.scheduler_rpcapi = rpcapi.SchedulerAPI()
         #self.periodic_checks = periodic_checks.PeriodicChecks()
 
     def host_passes(self, host_state, filter_properties):
         ''' Check if periodic tasks are running.'''
         # get the nodes from Periodic Tasks
 
-        if CONF.periodic_checks.periodic_tasks_running:
+        context = context.get_admin_context()
+        if self.scheduler_rpcapi.is_periodic_checks_enabled(context):
             # periodic checks are running
-            hosts = periodic_checks.PeriodicChecks().get_trusted_pool()
+            hosts = self.scheduler_rpcapi.get_trusted_pool(context)
             host = hosts[host_state.host]
-            if CONF.periodic_checks.saved_trusted_pool:
+            LOG.debug("Trusted filter hosts: [%s]", hosts)
+            if self.scheduler_rpcapi.is_trusted_pool_saved(context):
                 self.compute_attestation.caches.compute_nodes = hosts
             return host['trust_lvl']
         else:

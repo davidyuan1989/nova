@@ -191,6 +191,7 @@ class PeriodicChecks(object):
                         'status': check_thread.status}
 
         '''maintain trusted pool'''
+        LOG.debug("Periodic check compute nodes: [%s]", self.compute_nodes)
         self.compute_nodes[host] = {
                         'trust_lvl': check_thread.result,
                         'vtime': timeutils.utcnow_ts()}
